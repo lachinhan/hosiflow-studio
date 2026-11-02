@@ -17,8 +17,9 @@
   <a href="#-tính-năng-cốt-lõi">Tính Năng</a> •
   <a href="#-hướng-dẫn-cài-đặt">Cài Đặt</a> •
   <a href="#-hướng-dẫn-sử-dụng-nhanh">Sử Dụng</a> •
-  <a href="#-cấu-trúc-dự-án">Cấu Trúc</a> •
-  <a href="#-yêu-cầu-hệ-thống">Yêu Cầu</a>
+  <a href="#-yêu-cầu-hệ-thống">Yêu Cầu</a> •
+  <a href="#️-support--donations">Ủng Hộ</a> •
+  <a href="#-contact--support">Liên Hệ</a>
 </p>
 
 ---
@@ -122,6 +123,27 @@ Bạn có thể tải trực tiếp ngay trên trang GitHub này:
 
 ---
 
+## ❤️ Support & Donations
+
+Nếu **HosiFlow Studio** giúp quy trình sáng tạo và dựng phim AI của bạn trở nên thuận tiện, hãy cân nhắc ủng hộ tác giả:
+
+* **MB Bank:** `0908107000` (LA CHI NHAN)
+* **MoMo:** `0908107000` (LA CHI NHAN)
+
+---
+
+## 📬 Contact & Support
+
+Hỗ trợ kỹ thuật, đóng góp tính năng, báo lỗi hoặc hợp tác thương mại, vui lòng liên hệ tác giả:
+
+* **Website:** [lachinhan.xyz](https://www.lachinhan.xyz)
+* **Facebook:** [facebook.com/nhanlc](https://facebook.com/nhanlc)
+* **Zalo:** [0908107000](https://zalo.me/0908107000)
+* **WhatsApp:** [+84 908 107 000](https://wa.me/84908107000)
+* **Telegram:** [0908107000](https://t.me/0908107000)
+
+---
+
 ## 📄 Bản Quyền & Giấy Phép
 
 Phát hành theo giấy phép **MIT License**. Xem chi tiết tại file [LICENSE](LICENSE).
@@ -129,5 +151,5 @@ Phát hành theo giấy phép **MIT License**. Xem chi tiết tại file [LICENS
 ---
 
 <p align="center">
-  Phát triển bởi <strong>HosiFlow Studio Team</strong>
+  Phát triển bởi <strong><a href="https://www.lachinhan.xyz">La Chí Nhân</a></strong>
 </p>
