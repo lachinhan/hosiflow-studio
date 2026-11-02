@@ -9,6 +9,11 @@
 </p>
 
 <p align="center">
+  <a href="./HosiFlow%20Studio%20Setup.exe"><strong>📥 Tải Bản Cài Đặt (Setup .exe - 1.8 MB)</strong></a> •
+  <a href="./HosiFlow%20Studio.exe"><strong>⚡ Tải Bản Chạy Ngay (Portable .exe - 5.1 MB)</strong></a>
+</p>
+
+<p align="center">
   <a href="#-tính-năng-cốt-lõi">Tính Năng</a> •
   <a href="#-hướng-dẫn-cài-đặt">Cài Đặt</a> •
   <a href="#-hướng-dẫn-sử-dụng-nhanh">Sử Dụng</a> •
@@ -73,9 +78,9 @@ Giải quyết triệt để bài toán **"nhân vật bị đổi mặt qua t�
 ## 📥 Hướng Dẫn Cài Đặt
 
 ### Bước 1: Tải & Cài Đặt Phần Mềm HosiFlow Studio
-1. Truy cập mục **[Releases](https://github.com/lachinhan/hosiflow-studio/releases)** của repository.
-2. Tải file cài đặt **`HosiFlow_Studio_Setup.exe`** (hoặc bản Portable `.exe`).
-3. Mở file và làm theo hướng dẫn trên màn hình để hoàn tất cài đặt.
+Bạn có thể tải trực tiếp ngay trên trang GitHub này:
+* 📥 **[Tải Bản Cài Đặt: HosiFlow Studio Setup.exe (1.8 MB)](./HosiFlow%20Studio%20Setup.exe)** (Khuyên dùng - Bấm chạy là tự cài đặt ra icon Desktop & Taskbar).
+* ⚡ **[Tải Bản Chạy Ngay: HosiFlow Studio.exe (5.1 MB)](./HosiFlow%20Studio.exe)** (Bản Portable, click mở là chạy ngay không cần cài đặt).
 
 ### Bước 2: Cài Đặt HosiFlow Companion (Chrome Extension)
 1. Tải thư mục **`companion-extension`** từ repository này về máy tính.
