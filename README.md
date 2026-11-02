@@ -1,7 +1,7 @@
 # 🎬 HosiFlow Studio — AI Film & Workflow Workstation
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/lachinhan/hosiflow-studio/main/companion-extension/icons/icon128.png" width="96" height="96" alt="HosiFlow Studio Logo" />
+  <img src="./companion-extension/icons/hosiflow_logo.png" width="100" height="100" alt="HosiFlow Studio Logo" />
 </p>
 
 <p align="center">
