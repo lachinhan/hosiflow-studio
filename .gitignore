@@ -1,0 +1,25 @@
+# Private Source Code
+src/
+src-tauri/
+node_modules/
+dist/
+build/
+target/
+
+# Dev configs & Scripts
+package.json
+package-lock.json
+tsconfig*.json
+vite.config.ts
+index.html
+*.bat
+*.cmd
+ROADMAP.md
+*.log
+.vscode/
+.idea/
+public/
+
+# OS files
+.DS_Store
+Thumbs.db
