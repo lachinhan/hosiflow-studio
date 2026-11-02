@@ -1,83 +1,172 @@
-// HosiFlow Companion - Background Service Worker
-// Giao tiếp qua Local HTTP API: http://127.0.0.1:4826
+// HosiFlow Companion - Background Service Worker (Manifest V3)
+// Cầu nối giao tiếp Local API: http://127.0.0.1:4826
 
 const API_BASE = 'http://127.0.0.1:4826/api';
 let isProcessingJob = false;
-let preferredMuseTabId = null;
+let isLoopRunning = false;
 
-// Hàm kiểm tra định kỳ (Heartbeat & Job Poller)
-async function syncWithStudio() {
+// Đăng ký Alarm định kỳ để Service Worker tự động thức dậy trong MV3
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('hosiflow_keepalive', { periodInMinutes: 0.5 });
+  syncWithStudio();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create('hosiflow_keepalive', { periodInMinutes: 0.5 });
+  syncWithStudio();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'hosiflow_keepalive') {
+    syncWithStudio();
+  }
+});
+
+// Thức dậy khi người dùng thao tác với tab Muse.ai
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tab.url && tab.url.includes('muse.ai')) {
+    syncWithStudio();
+  }
+});
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
-    // 1. Ping Studio Desktop App
-    const pingRes = await fetch(`${API_BASE}/ping`, { signal: AbortSignal.timeout(2000) });
-    if (!pingRes.ok) throw new Error('App not responding');
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    if (tab.url && tab.url.includes('muse.ai')) {
+      syncWithStudio();
+    }
+  } catch {
+    // Bỏ qua lỗi truy vấn tab
+  }
+});
 
-    // 2. Kiểm tra tab Muse.ai trên trình duyệt
+// Khi click vào icon extension trên toolbar: mở hoặc chuyển sang tab Muse.ai
+chrome.action.onClicked.addListener(async () => {
+  const museTab = await findMuseTab();
+  if (museTab && museTab.id) {
+    await chrome.tabs.update(museTab.id, { active: true });
+    if (museTab.windowId) {
+      await chrome.windows.update(museTab.windowId, { focused: true });
+    }
+  } else {
+    await chrome.tabs.create({ url: 'https://muse.ai' });
+  }
+  syncWithStudio();
+});
+
+// Hàm đồng bộ chính giữa Extension, App Desktop và Tab Muse.ai
+async function syncWithStudio() {
+  let appOnline = false;
+  let hasMuseTab = false;
+
+  try {
+    // 1. Kiểm tra Studio Desktop App qua Local HTTP
+    const pingRes = await fetch(`${API_BASE}/ping`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(1500),
+    }).catch(() => null);
+
+    if (pingRes && pingRes.ok) {
+      appOnline = true;
+    }
+
+    if (!appOnline) {
+      // Desktop App chưa bật hoặc đóng -> Hiển thị OFF (màu xám)
+      chrome.action.setBadgeText({ text: 'OFF' });
+      chrome.action.setBadgeBackgroundColor({ color: '#64748b' });
+      return;
+    }
+
+    // 2. Kiểm tra tab Muse.ai
     const museTab = await findMuseTab();
-    const hasMuseTab = Boolean(museTab && museTab.id);
+    hasMuseTab = Boolean(museTab && museTab.id);
 
     if (hasMuseTab) {
-      // Đã mở tab Muse.ai và App đang bật -> ON XANH
+      // Cả App và Muse.ai đều sẵn sàng -> Hiển thị ON (màu xanh lá)
       chrome.action.setBadgeText({ text: 'ON' });
       chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
     } else {
-      // App đang bật nhưng chưa mở Muse.ai -> VÀNG
+      // App đang bật nhưng chưa mở tab Muse.ai -> Hiển thị TAB (màu cam)
       chrome.action.setBadgeText({ text: 'TAB' });
       chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
     }
 
-    // 3. Gửi Heartbeat lên App để cập nhật trạng thái
+    // 3. Báo cáo nhịp tim (Heartbeat) về Studio
     await fetch(`${API_BASE}/companion/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ muse_session_ready: hasMuseTab }),
-    });
+      signal: AbortSignal.timeout(1500),
+    }).catch(() => null);
 
-    // 4. Nếu có tab Muse và không bận, kiểm tra xem App có job nào cần chạy không
+    // 4. Nếu tab Muse.ai sẵn sàng và không bận -> kiểm tra Job
     if (hasMuseTab && !isProcessingJob) {
       await pollAndExecuteJob(museTab.id);
     }
-  } catch (err) {
-    // Nếu không kết nối được App (App bị tắt hoặc chưa chạy) -> CHUYỂN NGAY VỀ OFF XÁM!
-    chrome.action.setBadgeText({ text: 'OFF' });
-    chrome.action.setBadgeBackgroundColor({ color: '#64748b' });
+  } catch {
+    // Tránh để lỗi mạng làm crash service worker
+  } finally {
+    // Lên lịch vòng lặp tiếp theo khi app online
+    if (appOnline && !isLoopRunning) {
+      isLoopRunning = true;
+      setTimeout(() => {
+        isLoopRunning = false;
+        syncWithStudio();
+      }, 2000);
+    }
   }
 }
 
+// Tìm tab Muse.ai đang mở trên trình duyệt
 async function findMuseTab() {
-  const tabs = await chrome.tabs.query({ url: ['https://muse.ai/*', 'https://*.muse.ai/*'] });
-  if (!tabs.length) return null;
-  if (preferredMuseTabId) {
-    const pref = tabs.find((t) => t.id === preferredMuseTabId);
-    if (pref) return pref;
+  try {
+    const tabs = await chrome.tabs.query({ url: ['https://muse.ai/*', 'https://*.muse.ai/*'] });
+    if (!tabs || tabs.length === 0) return null;
+    return tabs.find((t) => t.active) || tabs[0];
+  } catch {
+    return null;
   }
-  return tabs.find((t) => t.active) || tabs[0];
 }
 
+// Gửi message an toàn tới Content Script trong tab Muse.ai
+async function safeSendMessage(tabId, payload) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, payload);
+  } catch {
+    // Nếu tab vừa mở hoặc reload, tự động nạp lại muse-bridge.js
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['muse-bridge.js'],
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      return await chrome.tabs.sendMessage(tabId, payload);
+    } catch (e) {
+      return { ok: false, error: 'Không thể kết nối với tab Muse.ai. Vui lòng tải lại trang Muse.ai.' };
+    }
+  }
+}
+
+// Xử lý Job do Desktop App giao
 async function pollAndExecuteJob(tabId) {
   try {
-    const res = await fetch(`${API_BASE}/jobs/next`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return;
-    const job = await res.json();
+    const res = await fetch(`${API_BASE}/jobs/next`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
+    if (!res || !res.ok) return;
+
+    const job = await res.json().catch(() => null);
     if (!job || !job.id) return;
 
     isProcessingJob = true;
-    console.log('[HosiFlow Companion] Đang thực thi Job:', job);
 
     let reply;
     if (job.media_type === 'script') {
-      const payload = {
+      reply = await safeSendMessage(tabId, {
         type: 'MUSEFLOW_GENERATE_SCRIPT',
         requestId: job.id,
         prompt: job.prompt,
         timeoutSec: 180,
-      };
-      try {
-        reply = await chrome.tabs.sendMessage(tabId, payload);
-      } catch {
-        await chrome.scripting.executeScript({ target: { tabId }, files: ['muse-bridge.js'] });
-        reply = await chrome.tabs.sendMessage(tabId, payload);
-      }
+      });
 
       await fetch(`${API_BASE}/jobs/result`, {
         method: 'POST',
@@ -89,11 +178,11 @@ async function pollAndExecuteJob(tabId) {
           script_text: reply?.script || null,
           error: reply?.error || null,
         }),
-      });
+      }).catch(() => null);
       return;
     }
 
-    const payload = {
+    reply = await safeSendMessage(tabId, {
       type: 'MUSEFLOW_GENERATE',
       requestId: job.id,
       prompt: job.prompt,
@@ -103,18 +192,8 @@ async function pollAndExecuteJob(tabId) {
       mediaType: job.media_type || 'image',
       referenceImages: job.reference_images || [],
       timeoutSec: 600,
-    };
+    });
 
-    let reply;
-    try {
-      reply = await chrome.tabs.sendMessage(tabId, payload);
-    } catch {
-      // Thử inject lại bridge nếu tab vừa reload
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['muse-bridge.js'] });
-      reply = await chrome.tabs.sendMessage(tabId, payload);
-    }
-
-    // Gửi kết quả về Desktop App
     await fetch(`${API_BASE}/jobs/result`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -126,14 +205,13 @@ async function pollAndExecuteJob(tabId) {
         error: reply?.error || null,
         end_frame: reply?.endFrame || null,
       }),
-    });
-  } catch (err) {
-    console.error('[HosiFlow Companion] Lỗi chạy job:', err);
+    }).catch(() => null);
+  } catch {
+    // Không làm gián đoạn vòng lặp chính
   } finally {
     isProcessingJob = false;
   }
 }
 
-// Bắt đầu vòng lặp đồng bộ mỗi 2.5 giây
-setInterval(syncWithStudio, 2500);
+// Khởi chạy đồng bộ ngay khi Service Worker được nạp
 syncWithStudio();
