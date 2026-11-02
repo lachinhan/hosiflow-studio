@@ -133,6 +133,7 @@ Bạn có thể tải trực tiếp ngay trên trang GitHub này:
 
 Nếu **HosiFlow Studio** giúp quy trình sáng tạo và dựng phim AI của bạn trở nên thuận tiện, hãy cân nhắc ủng hộ tác giả:
 
+* **PayPal:** [paypal.me/nkstudio](https://paypal.me/nkstudio)
 * **MB Bank:** `0908107000` (LA CHI NHAN)
 * **MoMo:** `0908107000` (LA CHI NHAN)
 
