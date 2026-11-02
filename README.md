@@ -28,7 +28,13 @@
 
 **HosiFlow Studio** là phần mềm máy tính (Desktop App) độc lập chuyên sâu dành cho các nhà sáng tạo nội dung, biên kịch và nhà làm phim AI. 
 
-Khác với các công cụ web rời rạc, HosiFlow kết hợp sức mạnh của **Visual Node Canvas (Mạng lưới Node trực quan)**, **Bộ phân tích kịch bản tiếng Việt thông minh**, **Hệ thống khóa nhân vật Model Sheet đa góc (Character Vault)** và **Bàn dựng Timeline Native FFmpeg tốc độ cao** — kết nối mượt mà với **Muse.ai** thông qua **HosiFlow Companion Extension**.
+Khác với các công cụ web rời rạc hay các phần mềm bắt buộc phải mua API đắt đỏ, HosiFlow kết hợp sức mạnh của **Visual Node Canvas (Mạng lưới Node trực quan)**, **Bộ phân tích kịch bản tiếng Việt thông minh**, **Hệ thống khóa nhân vật Model Sheet đa góc (Character Vault)** và **Bàn dựng Timeline Native FFmpeg tốc độ cao** — kết nối mượt mà với **Muse.ai** thông qua **HosiFlow Companion Extension**.
+
+### 💡 Điểm Đột Phá: Cơ Chế "Zero API Cost" — Tiết Kiệm Tối Đa Chi Phí
+* **Hoàn Toàn Không Cần API Key:** Không bắt buộc bạn phải đăng ký tài khoản lập trình viên, không cần nạp thẻ tín dụng quốc tế, không lo chi phí mua token API hàng tháng đắt đỏ.
+* **Tận Dụng Phiên Đăng Nhập Sẵn Có:** Tự động điều khiển và thực thi trực tiếp trên phiên làm việc Muse.ai sẵn có của bạn trên trình duyệt Chrome thông qua cầu nối vệ tinh HosiFlow Companion.
+* **Sáng Tạo Không Giới Hạn:** Tận dụng triệt để tài nguyên Muse.ai để viết kịch bản, tạo ảnh khung đầu, sinh video và dựng phim liên tục mà không lo cạn kiệt ngân sách API.
+* **Bảo Mật Cục Bộ 100%:** Toàn bộ kịch bản, ảnh nhân vật và video được lưu trữ ngay trên ổ cứng máy tính của bạn qua cổng kết nối nội bộ `127.0.0.1:4826`, không qua bất kỳ máy chủ trung gian nào, bảo vệ tuyệt đối ý tưởng sáng tạo.
 
 ---
 
