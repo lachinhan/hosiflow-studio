@@ -1,0 +1,20 @@
+{
+  "version": "0.1.1",
+  "name": "HosiFlow Studio",
+  "releaseDate": "2026-11-04",
+  "description": "Bản cập nhật v0.1.1 hoàn thiện giải pháp kết nối Muse.ai, sửa lỗi nạp ảnh tham chiếu và tối ưu stream video trực tiếp.",
+  "changelog": [
+    "Khắc phục 100% lỗi nạp ảnh tham chiếu (Fixed Mixed Content & Reference Attachments)",
+    "Hỗ trợ Local Media Streaming tốc độ cao qua Axum Server nội bộ",
+    "Bổ sung hệ thống kiểm tra và thông báo phiên bản mới tự động",
+    "Thêm tùy chọn tải trực tiếp file cài đặt và Companion Extension ngay trên App",
+    "Nâng cấp Companion Extension lên v1.3.1 hoạt động ổn định và mượt mà"
+  ],
+  "downloadLinks": {
+    "portableExe": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/HosiFlow-Studio.exe",
+    "setupExe": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/HosiFlow%20Studio_Setup.exe",
+    "companionZip": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/companion-extension.zip",
+    "releasesPage": "https://github.com/lachinhan/hosiflow-studio/releases"
+  }
+}
+
