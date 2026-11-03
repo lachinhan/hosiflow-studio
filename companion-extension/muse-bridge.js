@@ -106,8 +106,40 @@
     if (!findComposer()) throw new Error('Muse chat is not ready. Open the Muse chat page and wait for the message box to load.');
   }
 
+  // Chuyển URL (kể cả blob: URL) sang Base64 Data URL tuyệt đối an toàn
+  async function fetchToDataUrl(url) {
+    if (!url) return '';
+    if (url.startsWith('data:')) return url;
+    try {
+      // TUYỆT ĐỐI KHÔNG dùng credentials với blob: URL vì fetch spec cấm credentials trên blob scheme
+      const isBlob = url.startsWith('blob:');
+      const response = await fetch(url, isBlob ? {} : { credentials: 'include' });
+      const blob = await response.blob();
+      if (blob && blob.size > 0) {
+        return await blobToDataUrl(blob);
+      }
+    } catch (e) {
+      console.warn('[HosiFlow Bridge] fetchToDataUrl error:', e);
+    }
+    return '';
+  }
+
+  // Fallback vẽ canvas trực tiếp từ thẻ img nếu fetch gặp trục trặc
+  function imageElementToDataUrl(imgEl) {
+    try {
+      if (!imgEl || !imgEl.naturalWidth) return '';
+      const canvas = document.createElement('canvas');
+      canvas.width = imgEl.naturalWidth;
+      canvas.height = imgEl.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(imgEl, 0, 0);
+      return canvas.toDataURL('image/png');
+    } catch {
+      return '';
+    }
+  }
+
   // Thu thập TẤT CẢ ảnh và video do Assistant sinh ra
-  // KHÔNG ĐƯỢC filter group/msg vì Muse luôn bọc tin nhắn trong group/msg!
   function attachments() {
     const candidates = [
       ...document.querySelectorAll('[data-testid^="hatch-chat-attachment-presentation-"]'),
@@ -251,19 +283,12 @@
         const imageCard = fresh.find(a => !a.isVideo) || fresh[0];
         if (imageCard && imageCard.src) {
           console.log('[HosiFlow Bridge] 🎯 Đã bắt được ảnh mới từ Muse:', imageCard.src);
-          // Link dạng blob:https://muse.ai/1c0f9be7-a7f2-4ce2-8913-5e35d2375467 hoặc https://
-          try {
-            const response = await fetch(imageCard.src, { credentials: 'include' });
-            if (response.ok) {
-              const blob = await response.blob();
-              const dataUrl = await blobToDataUrl(blob);
-              console.log('[HosiFlow Bridge] ✅ Đã nạp ảnh thành Data URL:', blob.size, 'bytes');
-              return { ok: true, url: dataUrl };
-            }
-          } catch (e) {
-            console.warn('[HosiFlow Bridge] Không thể nạp ảnh sang data URL, dùng link gốc:', e);
+          // Chuyển link ảnh (kể cả blob: URL) sang Base64 Data URL để Tauri hiển thị mượt mà
+          const dataUrl = (await fetchToDataUrl(imageCard.src)) || imageElementToDataUrl(imageCard.mediaEl);
+          if (dataUrl) {
+            console.log('[HosiFlow Bridge] ✅ Đã nạp ảnh thành Data URL thành công');
+            return { ok: true, url: dataUrl };
           }
-          return { ok: true, url: imageCard.src };
         }
       }
 
@@ -278,7 +303,7 @@
           if (playBtn && !playBtn.hasAttribute('data-hf-played')) {
             playBtn.setAttribute('data-hf-played', 'true');
             try { playBtn.click(); } catch {}
-            await delay(400, signal);
+            await delay(500, signal);
           }
 
           const src = videoCard.videoUrl || videoCard.src || '';
@@ -293,10 +318,7 @@
             let endFrame = null;
             const img = videoCard.el.querySelector ? videoCard.el.querySelector('img') : null;
             if (img && img.src) {
-              try {
-                const imgRes = await fetch(img.src, { credentials: 'include' });
-                if (imgRes.ok) endFrame = await blobToDataUrl(await imgRes.blob());
-              } catch {}
+              endFrame = (await fetchToDataUrl(img.src)) || imageElementToDataUrl(img);
             }
             return { ok: true, url: `https://muse.ai/${uuid}.mp4`, endFrame };
           }
@@ -335,13 +357,27 @@
     const files = await Promise.all(references.map(async (reference, index) => {
       const url = typeof reference === 'string' ? reference : reference?.url;
       if (!url) throw new Error(`Reference image ${index + 1} has no URL.`);
-      const response = await fetch(url, { credentials: 'include' });
-      if (!response.ok) throw new Error(`Could not load reference image ${index + 1} (${response.status}).`);
-      const blob = await response.blob();
-      if (!blob.type.startsWith('image/') || !blob.size) throw new Error(`Reference ${index + 1} is not a readable image.`);
-      const extension = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
-      return new File([blob], `museflow-reference-${String(index + 1).padStart(2, '0')}.${extension}`, { type: blob.type });
+
+      let blob;
+      try {
+        if (url.startsWith('data:')) {
+          const res = await fetch(url);
+          blob = await res.blob();
+        } else {
+          const isBlob = url.startsWith('blob:');
+          const res = await fetch(url, isBlob ? {} : { credentials: 'include' });
+          blob = await res.blob();
+        }
+      } catch (err) {
+        throw new Error(`Could not load reference image ${index + 1}: ${err.message}`);
+      }
+
+      if (!blob || !blob.size) throw new Error(`Reference ${index + 1} is not a readable image.`);
+      const detectedType = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/png';
+      const extension = (detectedType.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
+      return new File([blob], `museflow-reference-${String(index + 1).padStart(2, '0')}.${extension}`, { type: detectedType });
     }));
+
     const composer = findComposer();
     let composerRoot = composer.closest('form') || composer.parentElement;
     for (let i = 0; i < 8 && composerRoot?.parentElement; i++) {
