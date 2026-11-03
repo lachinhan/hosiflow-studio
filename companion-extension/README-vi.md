@@ -1,0 +1,113 @@
+# 26Flow
+
+[English](README.md)
+
+**Tải nhanh:** [Tải MuseFlow-extension.zip](https://github.com/bynne2602/museflow/raw/refs/heads/main/downloads/MuseFlow-extension.zip) · Không cần cài npm hoặc build.
+
+**26Flow** là tiện ích mở rộng tạo quy trình trực quan bằng phiên Muse.ai bạn đã đăng nhập. Bạn có thể nối các node trên canvas, tạo ảnh/video và sắp xếp clip video trên timeline.
+
+## Ảnh giao diện
+
+### Canvas workflow và Muse.ai
+
+![Canvas 26Flow kết nối với phiên Muse.ai](docs/screenshots/26flow-workflow-canvas.png)
+
+### Xem trước timeline
+
+![26Flow phát một cảnh video trong cửa sổ xem trước](docs/screenshots/26flow-timeline-preview.png)
+
+### Chỉnh sửa timeline
+
+![Timeline 26Flow với thứ tự clip, ảnh xem trước và thời lượng](docs/screenshots/26flow-timeline-editor.png)
+
+### Video demo
+
+[![Xem MuseFlow: tạo ảnh, tạo video và ghép cảnh bằng Muse.ai](https://img.youtube.com/vi/w7mJwTJyzKw/maxresdefault.jpg)](https://www.youtube.com/watch?v=w7mJwTJyzKw)
+
+[▶ Xem trên YouTube](https://www.youtube.com/watch?v=w7mJwTJyzKw) · [Tải video demo MP4](https://github.com/bynne2602/museflow/releases/download/demo-2026-10-09/2026-10-09.11-17-18.mp4)
+
+### Tính năng
+
+- **Canvas node:** thêm, di chuyển, nối, chọn nhiều và sắp xếp node. Giữ **Alt** khi kéo để sao chép node hoặc nhóm node cùng các kết nối đầu vào; nhấn **Ctrl+Z** để hoàn tác chỉnh sửa workflow gần nhất. Nhấn **G** rồi kéo trên canvas để tạo khung nhóm node; nhấn **T** để thêm ghi chú văn bản trực tiếp trên canvas. Ghi chú có thể kéo, sửa, và được lưu cùng workflow. Khung nhóm được lưu trong workflow. Có thể phóng to/thu nhỏ, kéo canvas và mở thao tác bằng menu chuột phải.
+- **Công cụ prompt:** tạo prompt, negative prompt, nối thêm hoặc gộp văn bản; Text Merge nhận nhiều nguồn text trên cùng một cổng và ghép theo thứ tự kết nối bằng dấu phân cách tùy chỉnh.
+- **Quy trình ảnh:** đưa ảnh vào, kết nối nhiều ảnh tham chiếu, tạo ảnh, đổi kích thước và xem trước kết quả.
+- **Quy trình video:** tạo clip, tùy chọn dùng frame cuối của clip trước làm ảnh tham chiếu mở đầu để giữ tính liên tục.
+- **Timeline:** thêm và sắp xếp clip, đặt thời lượng, xem trước chuỗi clip; xuất WebM hoặc ghép toàn bộ timeline thành MP4 (H.264) bằng FFmpeg được đóng gói trong extension. MP4 được xử lý ngay trên máy.
+- **Script → Nodes:** chuyển kịch bản chia cảnh thành các node ảnh/video đã nối và timeline theo thứ tự. Có thể tải mẫu điền tay hoặc gửi AI viết ngay trong cửa sổ nhập kịch bản; mẫu quy định chặt tiêu đề, tên trường và bố cục cảnh. Công cụ nhận cả tiêu đề `CẢNH 1 (...)` và `Scene 1 (...)`, đồng thời tự bung các khóa prompt dùng chung.
+- **Chọn node khi chạy workflow:** xem lại thứ tự, kéo để sắp xếp, rồi tick riêng các node ảnh/video cần chạy. MuseFlow cảnh báo nếu node được chọn cần kết quả nguồn chưa có.
+- **Tệp workflow:** chọn **Save workflow** để tải workflow dạng JSON có thể dùng lại, rồi chọn **Import workflow** để mở lại. Media đầu vào và media đã tạo sẽ được nhúng nếu có thể; media từ xa không truy cập được sẽ giữ liên kết gốc.
+- **Tự lưu cục bộ:** nút **Save** và tự động lưu giữ workflow hiện tại trong bộ nhớ extension trên trình duyệt.
+
+### Yêu cầu
+
+- Trình duyệt nền Chromium có hỗ trợ extension Manifest V3.
+- Đăng nhập Muse.ai và mở trang chat Muse.ai trong lúc tạo nội dung.
+- Tài khoản và giao diện Muse.ai cần hỗ trợ chức năng bạn muốn dùng. Tỷ lệ ảnh, âm thanh và khả năng tạo video phụ thuộc vào Muse.ai.
+
+26Flow kết nối Muse.ai thông qua page bridge của extension. Ứng dụng không dùng muse2api, backend tạo nội dung riêng, API key, Docker hay bước build bằng npm. Khi chạy workflow, prompt và ảnh tham chiếu đã chọn sẽ được gửi tới Muse.ai. Chức năng xuất MP4 dùng engine FFmpeg WebAssembly được đóng gói cùng extension và xử lý video cục bộ trên máy.
+
+### Cài đặt
+
+1. Tải [MuseFlow-extension.zip](https://github.com/bynne2602/museflow/raw/refs/heads/main/downloads/MuseFlow-extension.zip) rồi giải nén vào một thư mục cố định. Bạn cũng có thể [tải ZIP repository](https://github.com/bynne2602/museflow/archive/refs/heads/main.zip).
+2. Mở trang quản lý extension của trình duyệt (Chrome: `chrome://extensions`).
+3. Bật **Developer mode (Chế độ nhà phát triển)**.
+4. Chọn **Load unpacked (Tải tiện ích đã giải nén)** và trỏ tới thư mục có file `manifest.json`.
+5. Mở Muse.ai, đăng nhập và vào trang chat.
+6. Mở **26Flow** và kiểm tra trạng thái phiên Muse.
+
+Không cần cài npm hoặc chạy bước build. ZIP tải về có mã nguồn extension và các file FFmpeg cục bộ đi kèm. Khi chọn **Load unpacked**, hãy chọn thư mục sau giải nén có chứa trực tiếp file `manifest.json`.
+
+### Tải gói ZIP cài sẵn
+
+Gói ZIP có sẵn gồm extension, FFmpeg đi kèm và thông báo giấy phép liên quan. Cần giải nén trước, sau đó chọn thư mục chứa `manifest.json` bằng **Load unpacked**; không chọn trực tiếp file ZIP.
+
+#### Cập nhật
+
+Từ phiên bản 0.5.1, MuseFlow tự kiểm tra phiên bản mới khi mở ứng dụng. Nếu có bản mới, một thông báo nhỏ sẽ xuất hiện trên thanh trạng thái với liên kết tải ZIP; bạn có thể bỏ qua thông báo hoặc tự tải và cập nhật khi muốn. Sau khi thay file, nhấn **Reload (Tải lại)** tại trang quản lý extension và tải lại tab Muse.ai.
+
+Các bản cũ hơn 0.5.1 chưa có bộ kiểm tra cập nhật. Người dùng cần cập nhật thủ công lên phiên bản 0.5.1 một lần để nhận thông báo cho các phiên bản phát hành sau.
+
+## Mở MuseFlow và Muse.ai cạnh nhau
+
+Để dễ thao tác và theo dõi quá trình tạo nội dung, bạn có thể hiển thị canvas MuseFlow và khung chat Muse.ai cùng lúc:
+
+1. Mở trang chat Muse.ai trong một cửa sổ trình duyệt.
+2. Nhấn biểu tượng extension MuseFlow để mở canvas trong tab mới. Kéo tab MuseFlow ra khỏi thanh tab để tách thành cửa sổ riêng.
+3. Trên Windows, chọn cửa sổ MuseFlow rồi nhấn **Windows + phím mũi tên trái**. Chọn cửa sổ Muse.ai rồi nhấn **Windows + phím mũi tên phải**. Bạn cũng có thể kéo từng cửa sổ sát mép trái hoặc mép phải màn hình.
+4. Giữ cả hai trang mở khi tạo nội dung để theo dõi node đang chạy trong MuseFlow và phản hồi tạo nội dung trong Muse.ai.
+
+### Bắt đầu nhanh
+
+1. Thêm node **Prompt** và nhập nội dung.
+2. Thêm node **Generate Image** hoặc **Generate Video**.
+3. Kéo cổng output của Prompt sang cổng prompt của node tạo ảnh/video. Nối thêm ảnh tham chiếu hoặc input khác nếu cần.
+4. Chọn thông số và nhấn **Run Image** hoặc **Run Video** trên node, hoặc chạy toàn workflow từ thanh công cụ.
+5. Nối kết quả tới node **Preview**. Với video, thêm các clip vào **Timeline**, sắp xếp thứ tự rồi xem trước hoặc xuất video.
+
+Để tạo node từ kịch bản, chọn **Script → Nodes**, tải mẫu chuẩn rồi tự điền hoặc gửi mẫu cho AI kèm yêu cầu câu chuyện. Giữ nguyên tiêu đề và thứ tự trường của biểu mẫu. MuseFlow nhận cả tiêu đề `CẢNH 1 (0:00–0:05): Tên cảnh` và `Scene 1 (0:00–0:05): Tên cảnh`, khung đầu/cuối, diễn biến theo mốc giây, prompt ảnh khung đầu, prompt video và audio. Các khóa prompt dùng chung được bung vào nội dung từng cảnh. Mỗi cảnh được tạo thành các node ảnh/video đã nối; video được xếp theo thứ tự cảnh trên Timeline và bật continuity cho các cảnh tiếp theo.
+
+### Dữ liệu và quyền truy cập
+
+Workflow và media lưu cục bộ được giữ trong bộ nhớ extension trên thiết bị. Khi chạy workflow, 26Flow gửi prompt và ảnh tham chiếu liên quan tới Muse.ai thông qua phiên bạn đã đăng nhập. Extension cần quyền lưu trữ và truy cập tab để lưu workflow, kết nối với Muse.ai; extension không tạo tài khoản 26Flow hay máy chủ sinh nội dung riêng.
+
+### Khắc phục sự cố
+
+- **Không nhận phiên Muse:** đăng nhập Muse.ai, giữ trang chat đang mở, sau đó tải lại 26Flow và tab Muse.ai.
+- **Không bắt đầu tạo hoặc không thấy media:** kiểm tra trang và phiên Muse.ai rồi thử lại. Muse.ai có thể thay đổi giao diện hoặc luồng tạo nội dung, khi đó extension cần được cập nhật.
+- **Muse từ chối tạo cảnh:** 26Flow nhận diện lời từ chối, kể cả phản hồi tiếng Việt báo không tạo được hoặc đề nghị tạo bản tương đương, rồi tự thử lại cảnh đó một lần bằng prompt thay thế an toàn gần nhất. Không cần chờ xác nhận. Lần thử lại giữ vai trò của cảnh trong kịch bản và các thiết lập; Muse.ai vẫn quyết định nội dung có được tạo hay không.
+- **Xuất timeline bị lỗi:** tải lại extension rồi thử lại. MP4 dùng engine FFmpeg đi kèm; WebM dùng `MediaRecorder` và canvas capture của trình duyệt.
+- **Kết quả không đúng thông số:** Muse.ai quyết định media đầu ra; dịch vụ có thể không luôn làm theo tỷ lệ ảnh, âm thanh hoặc tùy chọn video được yêu cầu.
+
+### Lịch sử Star
+
+<a href="https://www.star-history.com/?repos=bynne2602%2Fmuseflow&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=bynne2602/museflow&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=bynne2602/museflow&type=date&legend=top-left" />
+   <img alt="Biểu đồ lịch sử Star" src="https://api.star-history.com/chart?repos=bynne2602/museflow&type=date&legend=top-left" />
+ </picture>
+</a>
+
+### Giấy phép
+
+MuseFlow được cấp phép theo [Giấy phép Công cộng GNU phiên bản 2.0 trở lên (GPL-2.0-or-later)](LICENSE), cùng loại với FFmpeg core đi kèm. JavaScript wrapper của FFmpeg vẫn dùng MIT. Xem [thông báo giấy phép bên thứ ba](THIRD_PARTY_NOTICES.md) và các tệp giấy phép liên quan.
