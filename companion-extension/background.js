@@ -7,7 +7,6 @@ let isLoopRunning = false;
 const processedJobIds = new Set();
 
 // Đăng ký Alarm định kỳ để Service Worker tự động thức dậy trong MV3
-// Lưu ý: periodInMinutes tối thiểu là 1 trong Chrome MV3
 function setupKeepAliveAlarm() {
   try {
     chrome.alarms.create('hosiflow_keepalive', { periodInMinutes: 1 });
@@ -51,7 +50,6 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 // Lắng nghe Message từ Content Script (muse-bridge.js)
-// Khi Content Script gửi chrome.runtime.sendMessage, MV3 Service Worker tự động thức dậy!
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'MUSEFLOW_JOB_COMPLETED') {
     handleJobCompleted(message);
@@ -67,17 +65,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Gửi kết quả hoàn thành về HosiFlow Studio Local API
 async function handleJobCompleted(data) {
+  // Luôn luôn giải phóng cờ bận trước tiên để không bao giờ bị deadlock
+  isProcessingJob = false;
+
   const jobId = data.jobId || data.job_id;
   if (!jobId) return;
 
-  if (processedJobIds.has(jobId)) {
+  const dedupeKey = `${jobId}_${data.ok}`;
+  if (processedJobIds.has(dedupeKey)) {
     console.log(`[HosiFlow Companion] Job ${jobId} đã được báo cáo trước đó, bỏ qua lặp.`);
     return;
   }
-  processedJobIds.add(jobId);
-  isProcessingJob = false;
+  processedJobIds.add(dedupeKey);
+  if (processedJobIds.size > 200) {
+    const first = processedJobIds.values().next().value;
+    if (first) processedJobIds.delete(first);
+  }
 
-  console.log(`[HosiFlow Companion] Đang gửi kết quả Job ${jobId} về Studio:`, data.ok ? 'SUCCESS' : 'FAILED');
+  console.log(`[HosiFlow Companion] Đang gửi kết quả Job ${jobId} về Studio:`, data.ok ? 'SUCCESS' : 'FAILED', data.url || data.error);
 
   try {
     await fetch(`${API_BASE}/jobs/result`, {
@@ -171,7 +176,7 @@ async function syncWithStudio() {
       setTimeout(() => {
         isLoopRunning = false;
         syncWithStudio();
-      }, 2000);
+      }, 1500);
     }
   }
 }
@@ -198,10 +203,10 @@ async function safeSendMessage(tabId, payload) {
         target: { tabId },
         files: ['muse-bridge.js'],
       });
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 250));
       return await chrome.tabs.sendMessage(tabId, payload);
     } catch (e) {
-      return { ok: false, error: 'Không thể kết nối với tab Muse.ai. Vui lòng tải lại trang Muse.ai.' };
+      return { ok: false, error: 'Không thể kết nối với tab Muse.ai. Vui lòng làm mới lại tab Muse.ai (F5).' };
     }
   }
 }
@@ -217,50 +222,58 @@ async function pollAndExecuteJob(tabId) {
 
     isProcessingJob = true;
 
-    let reply;
-    if (job.media_type === 'script') {
-      reply = await safeSendMessage(tabId, {
-        type: 'MUSEFLOW_GENERATE_SCRIPT',
+    try {
+      if (job.media_type === 'script') {
+        const reply = await safeSendMessage(tabId, {
+          type: 'MUSEFLOW_GENERATE_SCRIPT',
+          requestId: job.id,
+          nodeId: job.node_id,
+          prompt: job.prompt,
+          timeoutSec: 180,
+        });
+
+        await handleJobCompleted({
+          jobId: job.id,
+          nodeId: job.node_id,
+          ok: reply ? Boolean(reply.ok) : false,
+          script_text: reply?.script || null,
+          error: reply?.error || (reply ? null : 'Mất kết nối với Muse tab'),
+        });
+        return;
+      }
+
+      const reply = await safeSendMessage(tabId, {
+        type: 'MUSEFLOW_GENERATE',
         requestId: job.id,
         nodeId: job.node_id,
         prompt: job.prompt,
-        timeoutSec: 180,
+        negativePrompt: job.negative_prompt || '',
+        size: job.size || '16:9',
+        duration: job.duration || 5,
+        mediaType: job.media_type || 'image',
+        referenceImages: job.reference_images || [],
+        timeoutSec: 600,
       });
 
       if (reply) {
         await handleJobCompleted({
           jobId: job.id,
           nodeId: job.node_id,
-          ok: reply.ok,
-          script_text: reply.script || null,
+          ok: Boolean(reply.ok),
+          url: reply.url || null,
           error: reply.error || null,
+          endFrame: reply.endFrame || null,
+        });
+      } else {
+        await handleJobCompleted({
+          jobId: job.id,
+          nodeId: job.node_id,
+          ok: false,
+          error: 'Mất kết nối với tab Muse.ai hoặc tác vụ bị gián đoạn.',
         });
       }
-      return;
-    }
-
-    reply = await safeSendMessage(tabId, {
-      type: 'MUSEFLOW_GENERATE',
-      requestId: job.id,
-      nodeId: job.node_id,
-      prompt: job.prompt,
-      negativePrompt: job.negative_prompt || '',
-      size: job.size || '16:9',
-      duration: job.duration || 5,
-      mediaType: job.media_type || 'image',
-      referenceImages: job.reference_images || [],
-      timeoutSec: 600,
-    });
-
-    if (reply && (reply.url || reply.error || reply.ok === false)) {
-      await handleJobCompleted({
-        jobId: job.id,
-        nodeId: job.node_id,
-        ok: reply.ok,
-        url: reply.url || null,
-        error: reply.error || null,
-        endFrame: reply.endFrame || null,
-      });
+    } finally {
+      isProcessingJob = false;
     }
   } catch (err) {
     console.error('[HosiFlow Companion] pollAndExecuteJob error:', err);
