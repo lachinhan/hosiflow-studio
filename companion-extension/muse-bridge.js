@@ -1,8 +1,6 @@
 (() => {
-  // Cho phép nạp lại khi extension reload mà không bị chặn
   window.__museFlowBridgeInstalled = true;
 
-  // Lắng nghe Message từ Chrome Extension Background Service Worker
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'MUSEFLOW_CHECK_SESSION') {
       checkSession().then(sendResponse);
@@ -12,7 +10,7 @@
       const controller = new AbortController();
       activeGenerations.set(message.requestId || 'script', controller);
       generateScript(message, controller.signal)
-        .then((res) => sendResponse(res))
+        .then(sendResponse)
         .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }))
         .finally(() => activeGenerations.delete(message.requestId || 'script'));
       return true;
@@ -21,12 +19,7 @@
       const controller = new AbortController();
       activeGenerations.set(message.requestId, controller);
 
-      const keepAlive = setInterval(() => {
-        try { chrome.runtime.sendMessage({ type: 'MUSEFLOW_KEEPALIVE' }).catch(() => {}); } catch {}
-      }, 5000);
-
-      const reportResult = async (res) => {
-        // Kênh 1: Gửi thẳng tới Local API của Studio (ưu tiên cao nhất, không phụ thuộc service worker)
+      const reportToLocalServer = async (res) => {
         try {
           await fetch('http://127.0.0.1:4826/api/jobs/result', {
             method: 'POST',
@@ -41,36 +34,18 @@
             }),
           });
         } catch {}
-
-        // Kênh 2: Gửi qua runtime message
-        try {
-          await chrome.runtime.sendMessage({
-            type: 'MUSEFLOW_JOB_COMPLETED',
-            jobId: message.requestId,
-            nodeId: message.nodeId || message.node_id,
-            ok: Boolean(res?.ok),
-            url: res?.url || null,
-            error: res?.error || null,
-            endFrame: res?.endFrame || null,
-          });
-        } catch {}
       };
 
       generate(message, controller.signal)
         .then(async (res) => {
-          await reportResult(res);
-          try { sendResponse(res); } catch {}
+          await reportToLocalServer(res);
+          sendResponse(res);
+        }, async (error) => {
+          const res = { ok: false, code: error.code || 'MUSE_ERROR', error: error.message || String(error) };
+          await reportToLocalServer(res);
+          sendResponse(res);
         })
-        .catch(async (error) => {
-          const f = { ok: false, code: error.code || 'MUSE_ERROR', error: error.message || String(error) };
-          await reportResult(f);
-          try { sendResponse(f); } catch {}
-        })
-        .finally(() => {
-          clearInterval(keepAlive);
-          activeGenerations.delete(message.requestId);
-        });
-
+        .finally(() => activeGenerations.delete(message.requestId));
       return true;
     }
     if (message?.type === 'MUSEFLOW_STOP_GENERATION') {
@@ -80,26 +55,7 @@
     }
   });
 
-  // Tự động đảm bảo người dùng đang ở tab "Main chat", tránh bị kẹt trong Side chat
-  function ensureMainChat() {
-    try {
-      const sidebarItems = [...document.querySelectorAll('button, a, div[role="button"], span')].filter(visible);
-      const mainChatEl = sidebarItems.find(el => {
-        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-        return text === 'main chat' || text.startsWith('main chat');
-      });
-      if (mainChatEl) {
-        const isAlreadyActive = mainChatEl.classList.contains('active') || mainChatEl.getAttribute('aria-selected') === 'true' || mainChatEl.closest('[aria-selected="true"]');
-        if (!isAlreadyActive) {
-          console.log('[HosiFlow Bridge] Đang chuyển trình duyệt sang Main chat...');
-          mainChatEl.click();
-        }
-      }
-    } catch {}
-  }
-
   function findComposer() {
-    ensureMainChat();
     const candidates = [...document.querySelectorAll('textarea')].filter(el => visible(el) && !el.disabled);
     return candidates.find(el => /message|消息/i.test(el.getAttribute('placeholder') || '')) || candidates[0] || null;
   }
@@ -115,7 +71,7 @@
     signal?.addEventListener('abort', cancel, { once: true });
   });
 
-  const attachmentSelector = '[data-testid^="hatch-chat-attachment-presentation-"], [data-testid*="attachment"]';
+  const attachmentSelector = '[data-testid^="hatch-chat-attachment-presentation-"]';
   const activeGenerations = new Map();
 
   function clickMuseStop() {
@@ -133,7 +89,6 @@
   }
 
   async function checkSession() {
-    ensureMainChat();
     await waitHydrated(5000);
     const composer = findComposer();
     const ready = Boolean(composer && visible(composer) && !composer.disabled && !composer.readOnly);
@@ -153,36 +108,33 @@
   }
 
   function attachments() {
-    return [...document.querySelectorAll(attachmentSelector)]
-      .filter(el => !el.closest('form,[class*="chat-user-bubble"]') && !el.closest('[data-testid="hatch-composer-placeholder-overlay"]'))
-      .map(el => {
-        const tid = el.getAttribute('data-testid') || '';
-        const video = el.querySelector('video');
-        const image = el.querySelector('img');
-        const urls = [...el.querySelectorAll('a[href],video source[src],source[src],[data-video-src],[data-download-url]')]
-          .map(item => ({
-            url: item.href || item.src || item.getAttribute('data-video-src') || item.getAttribute('data-download-url') || '',
-            download: item.getAttribute('download') || '',
-            type: item.getAttribute('type') || ''
-          }))
-          .filter(item => item.url);
+    return [...document.querySelectorAll(attachmentSelector)].filter(el => !el.closest('form,[class*="chat-user-bubble"],[class*="group/msg"]') && !el.closest('[data-testid="hatch-composer-placeholder-overlay"]')).map(el => {
+      const tid = el.getAttribute('data-testid') || '';
+      const video = el.querySelector('video');
+      const image = el.querySelector('img');
+      const urls = [...el.querySelectorAll('a[href],video source[src],source[src],[data-video-src],[data-download-url]')].map(item => ({
+        url: item.href || item.src || item.getAttribute('data-video-src') || item.getAttribute('data-download-url') || '',
+        download: item.getAttribute('download') || '',
+        type: item.getAttribute('type') || ''
+      })).filter(item => item.url);
 
-        const videoLink = urls.find(item => /video\//i.test(item.type) || /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url) || /\.(?:mp4|webm|mov|m4v)$/i.test(item.download))?.url || '';
-        const videoUrl = video?.currentSrc || video?.src || videoLink || '';
-        const media = video || image;
-        const src = videoUrl || media?.currentSrc || media?.src || '';
+      const videoLink = urls.find(item => /video\//i.test(item.type) || /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url) || /\.(?:mp4|webm|mov|m4v)$/i.test(item.download))?.url || '';
+      const videoUrl = video?.currentSrc || video?.src || videoLink || '';
+      const media = video || image;
 
-        return {
-          el,
-          tid,
-          src,
-          videoUrl,
-          isVideo: Boolean(videoUrl) || video instanceof HTMLVideoElement || /video/i.test(tid),
-          width: video?.videoWidth || image?.naturalWidth || 0,
-          height: video?.videoHeight || image?.naturalHeight || 0
-        };
-      })
-      .filter(a => a.src);
+      // Nút Play hiển thị trên video card của Muse
+      const hasPlayIcon = Boolean(el.querySelector('button[aria-label*="play" i], [class*="play" i], svg'));
+
+      return {
+        el,
+        tid,
+        src: videoUrl || media?.currentSrc || media?.src || '',
+        videoUrl,
+        isVideo: Boolean(videoUrl) || video instanceof HTMLVideoElement || /video/i.test(tid) || hasPlayIcon,
+        width: video?.videoWidth || image?.naturalWidth || 0,
+        height: video?.videoHeight || image?.naturalHeight || 0
+      };
+    }).filter(a => a.src);
   }
 
   function waitForAttachmentChange(timeoutMs, signal) {
@@ -190,32 +142,19 @@
       let timer;
       const observer = new MutationObserver(() => finish());
       const finish = () => { observer.disconnect(); clearTimeout(timer); signal?.removeEventListener('abort', finish); resolve(); };
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['src', 'poster', 'href', 'download', 'type', 'data-testid', 'data-video-src', 'data-download-url']
-      });
+      observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'poster', 'href', 'download', 'type', 'data-testid', 'data-video-src', 'data-download-url'] });
       timer = setTimeout(finish, timeoutMs);
       signal?.addEventListener('abort', finish, { once: true });
     });
   }
 
   function assistantMessageElements() {
-    return [...document.querySelectorAll(
-      'div[class*="hatch-chat-groupable-bubble"],[data-message-author-role="assistant"],' +
-      '[data-testid*="assistant" i],[data-testid*="message-content" i],' +
-      '[class*="assistant-message" i],[class*="assistant-bubble" i]'
-    )].filter(el => visible(el) && !el.closest(
-      '[class*="chat-user-bubble"],[data-message-author-role="user"],[data-testid*="user-message" i]'
-    ));
+    return [...document.querySelectorAll('div[class*="hatch-chat-groupable-bubble"],[data-message-author-role="assistant"],[data-testid*="assistant" i],[data-testid*="message-content" i],[class*="assistant-message" i],[class*="assistant-bubble" i]')].filter(el => visible(el) && !el.closest('[class*="chat-user-bubble"],[data-message-author-role="user"],[data-testid*="user-message" i]'));
   }
 
   function readNewAssistantContext(previousBubbleTexts) {
     const bubbles = assistantMessageElements();
-    const messages = bubbles
-      .map(el => ({ el, text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() }))
-      .filter(item => item.text && item.text !== previousBubbleTexts.get(item.el));
+    const messages = bubbles.map(el => ({ el, text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() })).filter(item => item.text && item.text !== previousBubbleTexts.get(item.el));
     return messages.map(item => item.text).join('\n').slice(-6000);
   }
 
@@ -225,375 +164,184 @@
     const inability = /(?:không tạo được|không thể tạo|chưa thể tạo|không thực hiện được|vẫn không tạo được|không làm được)/i;
     const sceneContext = /(?:cảnh|bản|đoạn|video|ảnh|nội dung|yêu cầu|này)/i;
     const offerAlternative = /(?:bản|phiên bản|phương án)\s+tương\s+đương|tương\s+đương.{0,100}(?:bám|theo|kịch bản)|muốn.{0,100}(?:tạo mới|thử lại|làm lại)|(?:would you like|do you want|want me to).{0,100}(?:create|make|generate|try)|equivalent alternative/i;
-    return explicit.test(text) || (inability.test(text) && (sceneContext.test(text) || offerAlternative.test(text)));
+    return explicit.test(text) || inability.test(text) && (sceneContext.test(text) || offerAlternative.test(text));
   }
 
-  // TRÍCH XUẤT VIDEO URL CHÍNH XÁC (HỖ TRỢ ĐẶC BIỆT DẠNG BLOB & UUID .MP4 THEO PHÁT HIỆN CỦA USER)
-  function extractPlayableVideoUrl(rawString) {
-    if (!rawString || typeof rawString !== 'string') return null;
-    rawString = rawString.trim();
-    if (!rawString || rawString.length < 8) return null;
-    if (/\.(png|jpe?g|webp|gif|svg|ico|css|js)(\?|$)/i.test(rawString)) return null;
-
-    // Phát hiện 1: blob:https://muse.ai/72a764d1-6988-41e2-9a16-0763a0f1cae2
-    const blobMatch = rawString.match(/blob:https?:\/\/[^\/]+\/([0-9a-fA-F-]{36})/i);
-    if (blobMatch && blobMatch[1]) {
-      const uuid = blobMatch[1];
-      console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Blob URL:', uuid);
-      return `https://muse.ai/${uuid}.mp4`;
-    }
-
-    // Phát hiện 2: Direct URL .mp4
-    if (/\.(?:mp4|webm|mov|m4v)(\?|$|#)/i.test(rawString)) {
-      if (rawString.startsWith('http://') || rawString.startsWith('https://')) {
-        return rawString;
-      }
-      return `${window.location.origin}/${rawString.replace(/^\//, '')}`;
-    }
-
-    // Phát hiện 3: UUID 36 ký tự có đuôi .mp4
-    const uuidMp4Match = rawString.match(/([0-9a-fA-F-]{36})\.mp4/i);
-    if (uuidMp4Match && uuidMp4Match[1]) {
-      return `https://muse.ai/${uuidMp4Match[1]}.mp4`;
-    }
-
-    // Phát hiện 4: Đường dẫn tệp nội bộ Muse container (như trong Modal info)
-    const mediaPathMatch = rawString.match(/(?:https?:\/\/[^\s"'<>\\]+)?\/?workspace\/imagine_media\/([^\s"'<>\\]+\.mp4)/i);
-    if (mediaPathMatch && mediaPathMatch[0]) {
-      const p = mediaPathMatch[0];
-      return p.startsWith('http') ? p : `${window.location.origin}/${p.replace(/^\//, '')}`;
-    }
-
-    return null;
-  }
-
-  // Quét DOM tìm video clip sau khi Muse hoàn tất
-  async function findCompletedVideo(baselineSrcs, startTime, signal) {
-    // 1. Quét tất cả thẻ <video>
-    for (const v of document.querySelectorAll('video')) {
-      const s = v.currentSrc || v.src || v.querySelector('source')?.src || '';
-      const found = extractPlayableVideoUrl(s);
-      if (found) return found;
-    }
-
-    // 2. Quét tất cả thẻ <a>
-    for (const a of document.querySelectorAll('a[href]')) {
-      const found = extractPlayableVideoUrl(a.href);
-      if (found) return found;
-    }
-
-    // 3. Quét các attachments mới xuất hiện & kích hoạt Play để Muse mount player
-    const currentAtts = attachments();
-    const freshAtts = currentAtts.filter(a => !baselineSrcs.has(a.src));
-    const targetCards = freshAtts.length > 0 ? freshAtts : currentAtts.slice(-2);
-
-    for (const item of targetCards) {
-      const el = item.el;
-      // Kích hoạt Play nếu chưa từng bấm
-      const playBtn = el.querySelector('button[aria-label*="play" i], [class*="play" i], button:has(svg), [role="button"]:has(svg)') ||
-                      el.querySelector('svg') ||
-                      el;
-      if (playBtn && !playBtn.hasAttribute('data-hosiflow-played')) {
-        playBtn.setAttribute('data-hosiflow-played', 'true');
-        console.log('[HosiFlow Bridge] Kích hoạt Play trên card video để nạp player stream...', playBtn);
-        try {
-          playBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-          playBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-          playBtn.click();
-        } catch {}
-      }
-
-      // Quét các thuộc tính của card
-      for (const attr of el.attributes) {
-        const found = extractPlayableVideoUrl(attr.value);
-        if (found) return found;
-      }
-      for (const child of el.querySelectorAll('*')) {
-        for (const attr of child.attributes) {
-          const found = extractPlayableVideoUrl(attr.value);
-          if (found) return found;
-        }
-      }
-    }
-
-    // 4. Quét innerHTML của bong bóng tin nhắn Assistant mới nhất
-    const bubbles = assistantMessageElements();
-    if (bubbles.length > 0) {
-      const latestBubble = bubbles[bubbles.length - 1];
-      const bubbleHtml = latestBubble.innerHTML || '';
-
-      const blobUrls = bubbleHtml.match(/blob:https?:\/\/[^\s"'<>\\]+/gi) || [];
-      for (const b of blobUrls) {
-        const found = extractPlayableVideoUrl(b);
-        if (found) return found;
-      }
-
-      const mp4s = bubbleHtml.match(/(?:[0-9a-fA-F-]{36}\.mp4|workspace\/imagine_media\/[^\s"'<>\\]+\.mp4)/gi) || [];
-      for (const m of mp4s) {
-        const found = extractPlayableVideoUrl(m);
-        if (found) return found;
-      }
-    }
-
-    // 5. Quét Performance Resource Timing
-    try {
-      const entries = performance.getEntriesByType('resource')
-        .filter(e => e.startTime > (startTime - 5000))
-        .sort((a, b) => b.startTime - a.startTime);
-      for (const e of entries) {
-        const found = extractPlayableVideoUrl(e.name);
-        if (found) return found;
-      }
-    } catch {}
-
-    return null;
-  }
-
-  // Chuyển URL ảnh sang Data URL an toàn với timeout 4s
-  async function imageSrcToDataUrl(src) {
-    if (!src) return '';
-    if (src.startsWith('data:')) return src;
-    try {
-      const res = await fetch(src, { credentials: 'include', signal: AbortSignal.timeout(4000) });
-      if (res.ok) {
-        const blob = await res.blob();
-        return await blobToDataUrl(blob);
-      }
-    } catch {}
-    return src; // Fallback giữ nguyên link nếu không copy được sang blob
-  }
-
-  // HÀM GENERATE CHÍNH
-  async function generate({ prompt, timeoutSec = 600, mediaType = 'image', referenceImage = '', referenceImages = [], size = '16:9', requestId }, signal) {
+  async function generate({ prompt, timeoutSec = 600, mediaType = 'image', referenceImage = '', referenceImages = [], size = '1:1', requestId }, signal) {
     const throwIfAborted = () => { if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError'); };
     throwIfAborted();
     if (!String(prompt || '').trim()) throw new Error('Prompt is empty.');
-
-    ensureMainChat();
     await waitHydrated(15000, signal);
     throwIfAborted();
-
     const composer = findComposer();
-    if (!visible(composer)) throw new Error('Muse message box is not visible. Open Main chat and retry.');
-
+    if (!visible(composer)) throw new Error('Muse message box is not visible. Open the chat composer and retry.');
     const referenceList = Array.isArray(referenceImages) && referenceImages.length ? referenceImages : referenceImage ? [referenceImage] : [];
     if (referenceList.length) await attachReferences(referenceList, signal);
     throwIfAborted();
-
-    // Thu thập danh sách ảnh & attachment hiện có trước khi gửi prompt
     const baseline = new Set(attachments().map(a => a.src));
-    const baselineImages = new Set([...document.querySelectorAll('img')].map(i => i.currentSrc || i.src).filter(Boolean));
     const priorBubbleTexts = new Map(assistantMessageElements().map(el => [el, (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()]));
-    const initialBubbleCount = assistantMessageElements().length;
-    const startTime = performance.now();
-
-    composer.scrollIntoView({ block: 'center' });
-    composer.focus();
+    composer.scrollIntoView({ block: 'center' }); composer.focus();
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
     if (!setter) throw new Error('Muse message box is unsupported.');
-
-    let targetPrompt = String(prompt || '').trim();
-    const targetSize = size || '16:9';
-    if (mediaType === 'video') {
-      if (referenceList.length > 0 && !/animate.*video/i.test(targetPrompt)) {
-        targetPrompt = `Animate this exact reference image into a video: ${targetPrompt}`;
-      } else if (!/video/i.test(targetPrompt)) {
-        targetPrompt = `Generate a cinematic video: ${targetPrompt}`;
-      }
-    }
-    if (!/--(?:ar|aspect)\s+\d+:\d+/i.test(targetPrompt)) {
-      const ratioKeyword = targetSize === '16:9' ? '--ar 16:9, widescreen 16:9 horizontal'
-        : targetSize === '9:16' ? '--ar 9:16, vertical 9:16 portrait'
-        : targetSize === '1:1' ? '--ar 1:1, square 1:1'
-        : targetSize === '4:3' ? '--ar 4:3, standard 4:3'
-        : `--ar ${targetSize}`;
-      targetPrompt = `${targetPrompt} ${ratioKeyword}`;
-    }
-
-    setter.call(composer, targetPrompt);
+    setter.call(composer, String(prompt));
     composer.dispatchEvent(new Event('input', { bubbles: true }));
     composer.dispatchEvent(new Event('change', { bubbles: true }));
-
     let sendButton = null;
     for (let i = 0; i < 30; i++) {
       throwIfAborted();
-      sendButton = [...document.querySelectorAll('button,[role="button"]')].filter(visible)
-        .find(b => /send|发送/i.test(`${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-testid') || ''} ${b.innerText || ''}`));
+      sendButton = [...document.querySelectorAll('button,[role="button"]')].filter(visible).find(b => /send|发送/i.test(`${b.getAttribute('aria-label') || ''} ${b.getAttribute('data-testid') || ''} ${b.innerText || ''}`));
       if (sendButton && !sendButton.disabled) break;
       await delay(100, signal);
     }
     if (!composer.value.trim()) throw new Error('Muse did not accept the prompt into its message box. Nothing was submitted.');
-
     const bubbleCount = () => document.querySelectorAll('div[class*="hatch-chat-groupable-bubble"]').length;
     const beforeSendCount = bubbleCount();
     let submitted = false;
     throwIfAborted();
-
-    if (sendButton && !sendButton.disabled) {
-      sendButton.click();
-      submitted = true;
-    } else {
+    if (sendButton && !sendButton.disabled) { sendButton.click(); submitted = true; }
+    else {
       const form = composer.closest('form');
-      if (form && typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-        submitted = true;
-      } else {
+      if (form && typeof form.requestSubmit === 'function') { form.requestSubmit(); submitted = true; }
+      else {
         composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
         composer.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
         submitted = true;
       }
     }
-
     let accepted = false;
     for (let i = 0; i < 30; i++) {
       throwIfAborted();
-      if (!composer.isConnected || !composer.value.trim() || bubbleCount() > beforeSendCount ||
-          document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]')) {
-        accepted = true;
-        break;
-      }
+      if (!composer.isConnected || !composer.value.trim() || bubbleCount() > beforeSendCount || document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]')) { accepted = true; break; }
       await delay(100, signal);
     }
     if (!submitted || !accepted) throw new Error('Muse did not confirm the prompt submission. Check the chat box and try again; MuseFlow will not resubmit automatically.');
-
     const deadline = Date.now() + Math.min(900, Math.max(30, Number(timeoutSec) || 600)) * 1000;
+    let lastProgress = Date.now(), firstWrongRatioAt = 0, wrongMediaSince = 0;
     let refusalContext = '', refusalContextSince = 0;
-    let hasSeenStop = false;
-    let lastLog = 0;
-
     while (Date.now() < deadline) {
       throwIfAborted();
-
-      // Kiểm tra nút Stop của Muse
-      const isStopVisible = Boolean(document.querySelector(
-        '[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'
-      ));
-
-      if (isStopVisible) {
-        hasSeenStop = true;
-        if (Date.now() - lastLog > 8000) {
-          lastLog = Date.now();
-          console.log(`[HosiFlow Bridge] Muse đang tạo ${mediaType}... vui lòng đợi...`);
+      const fresh = attachments().filter(a => !baseline.has(a.src));
+      const matching = fresh.filter(a => mediaType === 'video' ? a.isVideo : !a.isVideo);
+      const wrongMedia = fresh.find(a => mediaType === 'image' ? a.isVideo : !a.isVideo);
+      if (wrongMedia) {
+        if (!wrongMediaSince) wrongMediaSince = Date.now();
+        if (Date.now() - wrongMediaSince >= 1800) {
+          const expected = mediaType === 'image' ? 'image' : 'video', actual = mediaType === 'image' ? 'video' : 'image';
+          const error = new Error(`Muse returned a ${actual} for a Generate ${expected === 'image' ? 'Image' : 'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);
+          error.code = 'MEDIA_TYPE_MISMATCH'; throw error;
         }
-        await delay(1000, signal);
-        continue;
-      }
+      } else wrongMediaSince = 0;
 
-      // ==========================================
-      // NHÁNH 1: XỬ LÝ GENERATE VIDEO
-      // ==========================================
-      if (mediaType === 'video') {
-        const bubbles = assistantMessageElements();
-        const hasNewContent = hasSeenStop || bubbles.length > initialBubbleCount;
+      const [ratioW, ratioH] = String(size || '1:1').split(':').map(Number), expectedRatio = ratioW > 0 && ratioH > 0 ? ratioW / ratioH : 1;
+      const measured = matching.filter(a => a.width > 0 && a.height > 0).sort((a, b) => {
+        const scoreA = Math.abs(Math.log((a.width / a.height) / expectedRatio)), scoreB = Math.abs(Math.log((b.width / b.height) / expectedRatio));
+        if (Math.abs(scoreA - scoreB) > .015) return scoreA - scoreB;
+        return a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1;
+      });
+      const best = measured[0], bestRatioError = best ? Math.abs(Math.log((best.width / best.height) / expectedRatio)) : Infinity;
+      if (best && bestRatioError <= .09) firstWrongRatioAt = 0;
+      else if (best && !firstWrongRatioAt) firstWrongRatioAt = Date.now();
+      const result = best && (bestRatioError <= .09 || Date.now() - firstWrongRatioAt >= 3500) ? best : null;
 
-        if (hasNewContent) {
-          const videoUrl = await findCompletedVideo(baseline, startTime, signal);
-          if (videoUrl) {
-            // Lấy poster image làm endFrame
+      if (result) {
+        // ==========================================
+        // NHÁNH VIDEO (XỬ LÝ ĐẶC BIỆT DẠNG BLOB/UUID)
+        // ==========================================
+        if (mediaType === 'video') {
+          // Kích hoạt Play nếu thẻ video chưa mount
+          const playBtn = result.el.querySelector('button[aria-label*="play" i], [class*="play" i], svg, [role="button"]') || result.el;
+          if (playBtn && !playBtn.hasAttribute('data-hf-played')) {
+            playBtn.setAttribute('data-hf-played', 'true');
+            try { playBtn.click(); } catch {}
+            await delay(400, signal);
+          }
+
+          const media = result.el.querySelector('video') || null;
+          const src = result.videoUrl || media?.currentSrc || media?.src || '';
+
+          // Trích xuất UUID từ src hoặc từ HTML của card (VD: blob:https://muse.ai/72a764d1-6988-41e2-9a16-0763a0f1cae2)
+          const searchStr = `${src} ${result.el.innerHTML || ''} ${document.body.innerHTML || ''}`;
+          const uuidMatch = searchStr.match(/blob:https?:\/\/[^\/]+\/([0-9a-fA-F-]{36})/i) ||
+                            searchStr.match(/([0-9a-fA-F-]{36})\.mp4/i) ||
+                            searchStr.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i);
+
+          if (uuidMatch && uuidMatch[1]) {
+            const uuid = uuidMatch[1];
+            console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Muse:', uuid);
             let endFrame = null;
-            const latestBubble = bubbles[bubbles.length - 1];
-            const cardImg = latestBubble?.querySelector('img') || document.querySelector('[data-testid^="hatch-chat-attachment"] img');
-            if (cardImg && cardImg.src) {
-              endFrame = await imageSrcToDataUrl(cardImg.currentSrc || cardImg.src);
+            const img = result.el.querySelector('img');
+            if (img && img.src) {
+              try {
+                const imgRes = await fetch(img.src, { credentials: 'include' });
+                if (imgRes.ok) endFrame = await blobToDataUrl(await imgRes.blob());
+              } catch {}
             }
-            console.log('[HosiFlow Bridge] ✅ Video đã hoàn thành thành công:', videoUrl);
-            return { ok: true, url: videoUrl, endFrame };
+            return { ok: true, url: `https://muse.ai/${uuid}.mp4`, endFrame };
           }
+
+          if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
+            return { ok: true, url: src };
+          }
+          if (!src) {
+            firstWrongRatioAt = firstWrongRatioAt || Date.now();
+            await waitForAttachmentChange(Math.min(500, deadline - Date.now()), signal);
+            continue;
+          }
+        }
+
+        // ==========================================
+        // NHÁNH IMAGE (NGUYÊN BẢN CHUẨN 100% GỐC MUSEFLOW)
+        // ==========================================
+        const media = result.el.querySelector('img') || null;
+        const src = media?.currentSrc || media?.src || '';
+        if (!src) {
+          firstWrongRatioAt = firstWrongRatioAt || Date.now();
+          await waitForAttachmentChange(Math.min(500, deadline - Date.now()), signal);
+          continue;
+        }
+        if (src.startsWith('data:')) return { ok: true, url: src };
+        try {
+          const response = await fetch(src, { credentials: 'include' });
+          if (!response.ok) throw new Error(`${mediaType} download returned HTTP ${response.status}.`);
+          const blob = await response.blob();
+          return { ok: true, url: await blobToDataUrl(blob) };
+        } catch (error) {
+          return { ok: true, url: src, error: `New ${mediaType} detected but could not be copied locally: ${error.message}` };
         }
       }
 
-      // ==========================================
-      // NHÁNH 2: XỬ LÝ GENERATE IMAGE
-      // ==========================================
-      if (mediaType === 'image') {
-        // Cách 1: Quét thẻ <img> trong các bong bóng tin nhắn Assistant mới nhất
-        const currentBubbles = assistantMessageElements();
-        for (let i = currentBubbles.length - 1; i >= 0 && i >= currentBubbles.length - 3; i--) {
-          const bubble = currentBubbles[i];
-          const imgs = [...bubble.querySelectorAll('img')].filter(visible);
-          for (const img of imgs) {
-            const s = img.currentSrc || img.src || '';
-            if (s && !baselineImages.has(s) && !/avatar|icon|logo|badge|\.svg/i.test(s)) {
-              console.log('[HosiFlow Bridge] 🎯 Tìm thấy ảnh mới trong Assistant Bubble:', s);
-              const dataUrl = await imageSrcToDataUrl(s);
-              return { ok: true, url: dataUrl || s, endFrame: null };
-            }
-          }
-        }
-
-        // Cách 2: Quét attachments() truyền thống
-        const fresh = attachments().filter(a => !baseline.has(a.src));
-        const matching = fresh.filter(a => !a.isVideo);
-        if (matching.length > 0) {
-          const best = matching[0];
-          const media = best.el.querySelector('img') || null;
-          const s = media?.currentSrc || media?.src || best.src;
-          if (s && !/avatar|icon|logo|badge|\.svg/i.test(s)) {
-            console.log('[HosiFlow Bridge] 🎯 Tìm thấy ảnh mới từ attachments():', s);
-            const dataUrl = await imageSrcToDataUrl(s);
-            return { ok: true, url: dataUrl || s, endFrame: null };
-          }
-        }
-
-        // Cách 3: Quét mọi thẻ <img> trên toàn trang chưa từng có trong baseline
-        for (const img of [...document.querySelectorAll('img')].filter(visible)) {
-          const s = img.currentSrc || img.src || '';
-          if (s && !baselineImages.has(s) && !/avatar|icon|logo|badge|\.svg/i.test(s) && (img.naturalWidth > 100 || img.width > 100 || s.startsWith('blob:') || s.startsWith('data:'))) {
-            console.log('[HosiFlow Bridge] 🎯 Tìm thấy ảnh mới trên trang:', s);
-            const dataUrl = await imageSrcToDataUrl(s);
-            return { ok: true, url: dataUrl || s, endFrame: null };
-          }
-        }
-      }
-
-      // Kiểm tra từ chối (refusal) & hết credits
-      const currentContext = readNewAssistantContext(priorBubbleTexts);
-      const refusal = isRefusalContext(currentContext);
+      const stop = Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
+      const currentContext = readNewAssistantContext(priorBubbleTexts), refusal = isRefusalContext(currentContext);
       if (refusal) {
         if (currentContext !== refusalContext) { refusalContext = currentContext; refusalContextSince = Date.now(); }
-        const clearRefusal = /(?:không tạo được|không thể tạo)/i.test(currentContext);
+        const clearRefusal = inability.test(currentContext) && sceneContext.test(currentContext) && offerAlternative.test(currentContext);
         if (clearRefusal || Date.now() - refusalContextSince >= 1200) {
-          if (isStopVisible) clickMuseStop();
-          const error = new Error(`Muse từ chối tạo cảnh này: ${currentContext.slice(-600)}`);
-          error.code = 'SCENE_REFUSED';
-          throw error;
+          if (stop) clickMuseStop();
+          const error = new Error(`Muse could not generate this scene: ${currentContext.slice(-700)}`);
+          error.code = 'SCENE_REFUSED'; throw error;
         }
-      } else {
-        refusalContext = '';
-        refusalContextSince = 0;
-      }
-
-      if (!isStopVisible && Date.now() - startTime > 5000) {
+      } else { refusalContext = ''; refusalContextSince = 0; }
+      if (!stop && Date.now() - lastProgress > 5000) {
         const tail = (document.body?.innerText || '').slice(-800);
-        if (/out of credits|insufficient credits|额度不足|积分不足/i.test(tail)) {
-          throw new Error('Tài khoản Muse đã hết lượt Credits tạo media.');
-        }
+        if (/out of credits|insufficient credits|额度不足|积分不足/i.test(tail)) throw new Error('Muse account has insufficient image credits.');
       }
-
-      await waitForAttachmentChange(Math.min(600, deadline - Date.now()), signal);
+      await waitForAttachmentChange(Math.min(500, deadline - Date.now()), signal);
     }
-
     throwIfAborted();
-    throw new Error(`Hết thời gian chờ Muse hoàn tất ${mediaType}.`);
+    throw new Error(`Timed out waiting for a new Muse ${mediaType} attachment. Prompt was submitted once; it was not resubmitted.`);
   }
 
-  // ATTACH REFERENCES
   async function attachReferences(references, signal) {
     const files = await Promise.all(references.map(async (reference, index) => {
       const url = typeof reference === 'string' ? reference : reference?.url;
       if (!url) throw new Error(`Reference image ${index + 1} has no URL.`);
-      let response = await fetch(url).catch(() => null);
-      if (!response || !response.ok) {
-        response = await fetch(url, { credentials: 'include' }).catch(() => null);
-      }
-      if (!response || !response.ok) throw new Error(`Could not load reference image ${index + 1} (${response?.status || 'network error'}).`);
+      const response = await fetch(url, { credentials: 'include' });
+      if (!response.ok) throw new Error(`Could not load reference image ${index + 1} (${response.status}).`);
       const blob = await response.blob();
-      if (!blob.size) throw new Error(`Reference ${index + 1} is not a readable image.`);
-      const detectedType = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/png';
-      const extension = (detectedType.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
-      return new File([blob], `museflow-reference-${String(index + 1).padStart(2, '0')}.${extension}`, { type: detectedType });
+      if (!blob.type.startsWith('image/') || !blob.size) throw new Error(`Reference ${index + 1} is not a readable image.`);
+      const extension = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
+      return new File([blob], `museflow-reference-${String(index + 1).padStart(2, '0')}.${extension}`, { type: blob.type });
     }));
-
     const composer = findComposer();
     let composerRoot = composer.closest('form') || composer.parentElement;
     for (let i = 0; i < 8 && composerRoot?.parentElement; i++) {
@@ -618,7 +366,6 @@
       if (uploadButton) { uploadButton.click(); await delay(250, signal); input = findInput(); }
     }
     if (!input) throw new Error('Muse image upload control was not found near the chat composer; the prompt was not submitted.');
-
     const previewSelector = 'img,[role="img"],[data-testid*="attachment" i],[data-testid*="upload" i],[class*="attachment" i],[class*="upload" i]';
     const previewElements = () => [...document.querySelectorAll(previewSelector)].filter(visible);
     const previewKey = el => {
@@ -627,11 +374,9 @@
     };
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
     if (!setter) throw new Error('Browser does not allow setting the Muse attachment input.');
-
     const uploadBatch = async (batch) => {
       const previousPreviews = new Set(previewElements().map(previewKey));
-      const transfer = new DataTransfer();
-      batch.forEach(file => transfer.items.add(file));
+      const transfer = new DataTransfer(); batch.forEach(file => transfer.items.add(file));
       if (batch.length > 1) input.multiple = true;
       setter.call(input, transfer.files);
       input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -642,19 +387,12 @@
         const key = previewKey(el), src = el.matches('img') ? (el.currentSrc || el.src || '') : key.split('|', 1)[0];
         return !previousPreviews.has(key) && Boolean(src);
       });
-      while (Date.now() < deadline) {
-        if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError');
-        if (previewSeen() || accepted() && Date.now() - started > 1000) return;
-        await delay(160, signal);
-      }
-      throw new Error(`Muse did not confirm ${batch.length} reference image${batch.length === 1 ? '' : 's'} in the chat composer; the prompt was not submitted.`);
+      while (Date.now() < deadline) { if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError'); if (previewSeen() || accepted() && Date.now() - started > 1000) return; await delay(160, signal); }
+      throw new Error(`Muse did not confirm ${batch.length} reference image${batch.length === 1 ? '' : 's'} in the chat composer (upload input accepts: ${input.accept || 'any file'}); the prompt was not submitted.`);
     };
-
     if (files.length > 1 && !input.multiple) {
       for (const file of files) await uploadBatch([file]);
-    } else {
-      await uploadBatch(files);
-    }
+    } else await uploadBatch(files);
   }
 
   function blobToDataUrl(blob) {
@@ -666,7 +404,6 @@
     });
   }
 
-  // GENERATE SCRIPT (Kịch bản phân cảnh)
   async function generateScript({ prompt, timeoutSec = 180 }, signal) {
     const composer = findComposer();
     if (!composer) throw new Error('Muse chat box not found');
