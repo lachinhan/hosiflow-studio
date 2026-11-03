@@ -71,7 +71,6 @@
     signal?.addEventListener('abort', cancel, { once: true });
   });
 
-  const attachmentSelector = '[data-testid^="hatch-chat-attachment-presentation-"]';
   const activeGenerations = new Map();
 
   function clickMuseStop() {
@@ -107,12 +106,27 @@
     if (!findComposer()) throw new Error('Muse chat is not ready. Open the Muse chat page and wait for the message box to load.');
   }
 
+  // Thu thập TẤT CẢ ảnh và video do Assistant sinh ra
+  // KHÔNG ĐƯỢC filter group/msg vì Muse luôn bọc tin nhắn trong group/msg!
   function attachments() {
-    return [...document.querySelectorAll(attachmentSelector)].filter(el => !el.closest('form,[class*="chat-user-bubble"],[class*="group/msg"]') && !el.closest('[data-testid="hatch-composer-placeholder-overlay"]')).map(el => {
-      const tid = el.getAttribute('data-testid') || '';
-      const video = el.querySelector('video');
-      const image = el.querySelector('img');
-      const urls = [...el.querySelectorAll('a[href],video source[src],source[src],[data-video-src],[data-download-url]')].map(item => ({
+    const candidates = [
+      ...document.querySelectorAll('[data-testid^="hatch-chat-attachment-presentation-"]'),
+      ...document.querySelectorAll('div[class*="groupable-bubble"] img, div[class*="assistant"] img'),
+      ...document.querySelectorAll('img, video')
+    ];
+
+    const seen = new Set();
+    const list = [];
+
+    for (const el of candidates) {
+      if (el.closest('form, [class*="chat-user-bubble"], [data-testid="hatch-composer-placeholder-overlay"]')) continue;
+
+      const video = el.tagName.toLowerCase() === 'video' ? el : el.querySelector('video');
+      const image = el.tagName.toLowerCase() === 'img' ? el : el.querySelector('img');
+      const media = video || image;
+      if (!media) continue;
+
+      const urls = [...(el.querySelectorAll ? el.querySelectorAll('a[href],video source[src],source[src],[data-video-src],[data-download-url]') : [])].map(item => ({
         url: item.href || item.src || item.getAttribute('data-video-src') || item.getAttribute('data-download-url') || '',
         download: item.getAttribute('download') || '',
         type: item.getAttribute('type') || ''
@@ -120,21 +134,25 @@
 
       const videoLink = urls.find(item => /video\//i.test(item.type) || /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url) || /\.(?:mp4|webm|mov|m4v)$/i.test(item.download))?.url || '';
       const videoUrl = video?.currentSrc || video?.src || videoLink || '';
-      const media = video || image;
+      const src = videoUrl || media?.currentSrc || media?.src || '';
+      if (!src || seen.has(src) || /avatar|icon|logo|badge|\.svg/i.test(src)) continue;
+      seen.add(src);
 
-      // Nút Play hiển thị trên video card của Muse
-      const hasPlayIcon = Boolean(el.querySelector('button[aria-label*="play" i], [class*="play" i], svg'));
+      const hasPlayIcon = Boolean(el.querySelector && el.querySelector('button[aria-label*="play" i], [class*="play" i], svg'));
+      const isVideo = Boolean(videoUrl) || video instanceof HTMLVideoElement || (el.getAttribute && /video/i.test(el.getAttribute('data-testid') || '')) || hasPlayIcon;
 
-      return {
-        el,
-        tid,
-        src: videoUrl || media?.currentSrc || media?.src || '',
+      list.push({
+        el: el.parentElement || el,
+        mediaEl: media,
+        src,
         videoUrl,
-        isVideo: Boolean(videoUrl) || video instanceof HTMLVideoElement || /video/i.test(tid) || hasPlayIcon,
+        isVideo,
         width: video?.videoWidth || image?.naturalWidth || 0,
         height: video?.videoHeight || image?.naturalHeight || 0
-      };
-    }).filter(a => a.src);
+      });
+    }
+
+    return list;
   }
 
   function waitForAttachmentChange(timeoutMs, signal) {
@@ -164,10 +182,10 @@
     const inability = /(?:không tạo được|không thể tạo|chưa thể tạo|không thực hiện được|vẫn không tạo được|không làm được)/i;
     const sceneContext = /(?:cảnh|bản|đoạn|video|ảnh|nội dung|yêu cầu|này)/i;
     const offerAlternative = /(?:bản|phiên bản|phương án)\s+tương\s+đương|tương\s+đương.{0,100}(?:bám|theo|kịch bản)|muốn.{0,100}(?:tạo mới|thử lại|làm lại)|(?:would you like|do you want|want me to).{0,100}(?:create|make|generate|try)|equivalent alternative/i;
-    return explicit.test(text) || inability.test(text) && (sceneContext.test(text) || offerAlternative.test(text));
+    return explicit.test(text) || (inability.test(text) && (sceneContext.test(text) || offerAlternative.test(text)));
   }
 
-  async function generate({ prompt, timeoutSec = 600, mediaType = 'image', referenceImage = '', referenceImages = [], size = '1:1', requestId }, signal) {
+  async function generate({ prompt, timeoutSec = 600, mediaType = 'image', referenceImage = '', referenceImages = [], size = '16:9', requestId }, signal) {
     const throwIfAborted = () => { if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError'); };
     throwIfAborted();
     if (!String(prompt || '').trim()) throw new Error('Prompt is empty.');
@@ -178,6 +196,7 @@
     const referenceList = Array.isArray(referenceImages) && referenceImages.length ? referenceImages : referenceImage ? [referenceImage] : [];
     if (referenceList.length) await attachReferences(referenceList, signal);
     throwIfAborted();
+
     const baseline = new Set(attachments().map(a => a.src));
     const priorBubbleTexts = new Map(assistantMessageElements().map(el => [el, (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()]));
     composer.scrollIntoView({ block: 'center' }); composer.focus();
@@ -186,6 +205,7 @@
     setter.call(composer, String(prompt));
     composer.dispatchEvent(new Event('input', { bubbles: true }));
     composer.dispatchEvent(new Event('change', { bubbles: true }));
+
     let sendButton = null;
     for (let i = 0; i < 30; i++) {
       throwIfAborted();
@@ -215,52 +235,54 @@
       await delay(100, signal);
     }
     if (!submitted || !accepted) throw new Error('Muse did not confirm the prompt submission. Check the chat box and try again; MuseFlow will not resubmit automatically.');
+
     const deadline = Date.now() + Math.min(900, Math.max(30, Number(timeoutSec) || 600)) * 1000;
-    let lastProgress = Date.now(), firstWrongRatioAt = 0, wrongMediaSince = 0;
+    let lastProgress = Date.now();
     let refusalContext = '', refusalContextSince = 0;
+
     while (Date.now() < deadline) {
       throwIfAborted();
       const fresh = attachments().filter(a => !baseline.has(a.src));
-      const matching = fresh.filter(a => mediaType === 'video' ? a.isVideo : !a.isVideo);
-      const wrongMedia = fresh.find(a => mediaType === 'image' ? a.isVideo : !a.isVideo);
-      if (wrongMedia) {
-        if (!wrongMediaSince) wrongMediaSince = Date.now();
-        if (Date.now() - wrongMediaSince >= 1800) {
-          const expected = mediaType === 'image' ? 'image' : 'video', actual = mediaType === 'image' ? 'video' : 'image';
-          const error = new Error(`Muse returned a ${actual} for a Generate ${expected === 'image' ? 'Image' : 'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);
-          error.code = 'MEDIA_TYPE_MISMATCH'; throw error;
+
+      // ==========================================
+      // NHÁNH 1: XỬ LÝ GENERATE IMAGE
+      // ==========================================
+      if (mediaType === 'image') {
+        const imageCard = fresh.find(a => !a.isVideo) || fresh[0];
+        if (imageCard && imageCard.src) {
+          console.log('[HosiFlow Bridge] 🎯 Đã bắt được ảnh mới từ Muse:', imageCard.src);
+          // Link dạng blob:https://muse.ai/1c0f9be7-a7f2-4ce2-8913-5e35d2375467 hoặc https://
+          try {
+            const response = await fetch(imageCard.src, { credentials: 'include' });
+            if (response.ok) {
+              const blob = await response.blob();
+              const dataUrl = await blobToDataUrl(blob);
+              console.log('[HosiFlow Bridge] ✅ Đã nạp ảnh thành Data URL:', blob.size, 'bytes');
+              return { ok: true, url: dataUrl };
+            }
+          } catch (e) {
+            console.warn('[HosiFlow Bridge] Không thể nạp ảnh sang data URL, dùng link gốc:', e);
+          }
+          return { ok: true, url: imageCard.src };
         }
-      } else wrongMediaSince = 0;
+      }
 
-      const [ratioW, ratioH] = String(size || '1:1').split(':').map(Number), expectedRatio = ratioW > 0 && ratioH > 0 ? ratioW / ratioH : 1;
-      const measured = matching.filter(a => a.width > 0 && a.height > 0).sort((a, b) => {
-        const scoreA = Math.abs(Math.log((a.width / a.height) / expectedRatio)), scoreB = Math.abs(Math.log((b.width / b.height) / expectedRatio));
-        if (Math.abs(scoreA - scoreB) > .015) return scoreA - scoreB;
-        return a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1;
-      });
-      const best = measured[0], bestRatioError = best ? Math.abs(Math.log((best.width / best.height) / expectedRatio)) : Infinity;
-      if (best && bestRatioError <= .09) firstWrongRatioAt = 0;
-      else if (best && !firstWrongRatioAt) firstWrongRatioAt = Date.now();
-      const result = best && (bestRatioError <= .09 || Date.now() - firstWrongRatioAt >= 3500) ? best : null;
-
-      if (result) {
-        // ==========================================
-        // NHÁNH VIDEO (XỬ LÝ ĐẶC BIỆT DẠNG BLOB/UUID)
-        // ==========================================
-        if (mediaType === 'video') {
+      // ==========================================
+      // NHÁNH 2: XỬ LÝ GENERATE VIDEO
+      // ==========================================
+      if (mediaType === 'video') {
+        const videoCard = fresh.find(a => a.isVideo) || fresh[0];
+        if (videoCard) {
           // Kích hoạt Play nếu thẻ video chưa mount
-          const playBtn = result.el.querySelector('button[aria-label*="play" i], [class*="play" i], svg, [role="button"]') || result.el;
+          const playBtn = videoCard.el.querySelector ? (videoCard.el.querySelector('button[aria-label*="play" i], [class*="play" i], svg') || videoCard.el) : videoCard.el;
           if (playBtn && !playBtn.hasAttribute('data-hf-played')) {
             playBtn.setAttribute('data-hf-played', 'true');
             try { playBtn.click(); } catch {}
             await delay(400, signal);
           }
 
-          const media = result.el.querySelector('video') || null;
-          const src = result.videoUrl || media?.currentSrc || media?.src || '';
-
-          // Trích xuất UUID từ src hoặc từ HTML của card (VD: blob:https://muse.ai/72a764d1-6988-41e2-9a16-0763a0f1cae2)
-          const searchStr = `${src} ${result.el.innerHTML || ''} ${document.body.innerHTML || ''}`;
+          const src = videoCard.videoUrl || videoCard.src || '';
+          const searchStr = `${src} ${videoCard.el.innerHTML || ''} ${document.body.innerHTML || ''}`;
           const uuidMatch = searchStr.match(/blob:https?:\/\/[^\/]+\/([0-9a-fA-F-]{36})/i) ||
                             searchStr.match(/([0-9a-fA-F-]{36})\.mp4/i) ||
                             searchStr.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i);
@@ -269,7 +291,7 @@
             const uuid = uuidMatch[1];
             console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Muse:', uuid);
             let endFrame = null;
-            const img = result.el.querySelector('img');
+            const img = videoCard.el.querySelector ? videoCard.el.querySelector('img') : null;
             if (img && img.src) {
               try {
                 const imgRes = await fetch(img.src, { credentials: 'include' });
@@ -282,31 +304,6 @@
           if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
             return { ok: true, url: src };
           }
-          if (!src) {
-            firstWrongRatioAt = firstWrongRatioAt || Date.now();
-            await waitForAttachmentChange(Math.min(500, deadline - Date.now()), signal);
-            continue;
-          }
-        }
-
-        // ==========================================
-        // NHÁNH IMAGE (NGUYÊN BẢN CHUẨN 100% GỐC MUSEFLOW)
-        // ==========================================
-        const media = result.el.querySelector('img') || null;
-        const src = media?.currentSrc || media?.src || '';
-        if (!src) {
-          firstWrongRatioAt = firstWrongRatioAt || Date.now();
-          await waitForAttachmentChange(Math.min(500, deadline - Date.now()), signal);
-          continue;
-        }
-        if (src.startsWith('data:')) return { ok: true, url: src };
-        try {
-          const response = await fetch(src, { credentials: 'include' });
-          if (!response.ok) throw new Error(`${mediaType} download returned HTTP ${response.status}.`);
-          const blob = await response.blob();
-          return { ok: true, url: await blobToDataUrl(blob) };
-        } catch (error) {
-          return { ok: true, url: src, error: `New ${mediaType} detected but could not be copied locally: ${error.message}` };
         }
       }
 
@@ -321,12 +318,15 @@
           error.code = 'SCENE_REFUSED'; throw error;
         }
       } else { refusalContext = ''; refusalContextSince = 0; }
+
       if (!stop && Date.now() - lastProgress > 5000) {
         const tail = (document.body?.innerText || '').slice(-800);
         if (/out of credits|insufficient credits|额度不足|积分不足/i.test(tail)) throw new Error('Muse account has insufficient image credits.');
       }
+
       await waitForAttachmentChange(Math.min(500, deadline - Date.now()), signal);
     }
+
     throwIfAborted();
     throw new Error(`Timed out waiting for a new Muse ${mediaType} attachment. Prompt was submitted once; it was not resubmitted.`);
   }
