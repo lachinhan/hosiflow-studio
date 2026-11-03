@@ -349,6 +349,20 @@
     return null;
   }
 
+  // Chuyển URL ảnh sang Data URL an toàn với timeout 4s
+  async function imageSrcToDataUrl(src) {
+    if (!src) return '';
+    if (src.startsWith('data:')) return src;
+    try {
+      const res = await fetch(src, { credentials: 'include', signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        const blob = await res.blob();
+        return await blobToDataUrl(blob);
+      }
+    } catch {}
+    return src; // Fallback giữ nguyên link nếu không copy được sang blob
+  }
+
   // HÀM GENERATE CHÍNH
   async function generate({ prompt, timeoutSec = 600, mediaType = 'image', referenceImage = '', referenceImages = [], size = '16:9', requestId }, signal) {
     const throwIfAborted = () => { if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError'); };
@@ -366,7 +380,9 @@
     if (referenceList.length) await attachReferences(referenceList, signal);
     throwIfAborted();
 
+    // Thu thập danh sách ảnh & attachment hiện có trước khi gửi prompt
     const baseline = new Set(attachments().map(a => a.src));
+    const baselineImages = new Set([...document.querySelectorAll('img')].map(i => i.currentSrc || i.src).filter(Boolean));
     const priorBubbleTexts = new Map(assistantMessageElements().map(el => [el, (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()]));
     const initialBubbleCount = assistantMessageElements().length;
     const startTime = performance.now();
@@ -478,13 +494,7 @@
             const latestBubble = bubbles[bubbles.length - 1];
             const cardImg = latestBubble?.querySelector('img') || document.querySelector('[data-testid^="hatch-chat-attachment"] img');
             if (cardImg && cardImg.src) {
-              try {
-                const res = await fetch(cardImg.src, { credentials: 'include' });
-                if (res.ok) {
-                  const b = await res.blob();
-                  endFrame = await blobToDataUrl(b);
-                }
-              } catch {}
+              endFrame = await imageSrcToDataUrl(cardImg.currentSrc || cardImg.src);
             }
             console.log('[HosiFlow Bridge] ✅ Video đã hoàn thành thành công:', videoUrl);
             return { ok: true, url: videoUrl, endFrame };
@@ -496,28 +506,42 @@
       // NHÁNH 2: XỬ LÝ GENERATE IMAGE
       // ==========================================
       if (mediaType === 'image') {
+        // Cách 1: Quét thẻ <img> trong các bong bóng tin nhắn Assistant mới nhất
+        const currentBubbles = assistantMessageElements();
+        for (let i = currentBubbles.length - 1; i >= 0 && i >= currentBubbles.length - 3; i--) {
+          const bubble = currentBubbles[i];
+          const imgs = [...bubble.querySelectorAll('img')].filter(visible);
+          for (const img of imgs) {
+            const s = img.currentSrc || img.src || '';
+            if (s && !baselineImages.has(s) && !/avatar|icon|logo|badge|\.svg/i.test(s)) {
+              console.log('[HosiFlow Bridge] 🎯 Tìm thấy ảnh mới trong Assistant Bubble:', s);
+              const dataUrl = await imageSrcToDataUrl(s);
+              return { ok: true, url: dataUrl || s, endFrame: null };
+            }
+          }
+        }
+
+        // Cách 2: Quét attachments() truyền thống
         const fresh = attachments().filter(a => !baseline.has(a.src));
         const matching = fresh.filter(a => !a.isVideo);
         if (matching.length > 0) {
           const best = matching[0];
           const media = best.el.querySelector('img') || null;
-          const src = media?.currentSrc || media?.src || best.src;
-          if (src) {
-            if (src.startsWith('data:')) {
-              console.log('[HosiFlow Bridge] ✅ Ảnh hoàn thành (Data URL)');
-              return { ok: true, url: src, endFrame: null };
-            }
-            try {
-              const response = await fetch(src, { credentials: 'include' });
-              if (response.ok) {
-                const blob = await response.blob();
-                const dataUrl = await blobToDataUrl(blob);
-                console.log('[HosiFlow Bridge] ✅ Ảnh hoàn thành xuất sắc, kích thước:', blob.size, 'bytes');
-                return { ok: true, url: dataUrl, endFrame: null };
-              }
-            } catch (err) {
-              return { ok: true, url: src, error: `Ảnh đã tạo nhưng không thể copy nội bộ: ${err.message}` };
-            }
+          const s = media?.currentSrc || media?.src || best.src;
+          if (s && !/avatar|icon|logo|badge|\.svg/i.test(s)) {
+            console.log('[HosiFlow Bridge] 🎯 Tìm thấy ảnh mới từ attachments():', s);
+            const dataUrl = await imageSrcToDataUrl(s);
+            return { ok: true, url: dataUrl || s, endFrame: null };
+          }
+        }
+
+        // Cách 3: Quét mọi thẻ <img> trên toàn trang chưa từng có trong baseline
+        for (const img of [...document.querySelectorAll('img')].filter(visible)) {
+          const s = img.currentSrc || img.src || '';
+          if (s && !baselineImages.has(s) && !/avatar|icon|logo|badge|\.svg/i.test(s) && (img.naturalWidth > 100 || img.width > 100 || s.startsWith('blob:') || s.startsWith('data:'))) {
+            console.log('[HosiFlow Bridge] 🎯 Tìm thấy ảnh mới trên trang:', s);
+            const dataUrl = await imageSrcToDataUrl(s);
+            return { ok: true, url: dataUrl || s, endFrame: null };
           }
         }
       }
