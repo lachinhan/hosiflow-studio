@@ -208,16 +208,16 @@
             (item.download && /\.(?:mp4|webm|mov|m4v)/i.test(item.download))
         )?.url || '';
       const videoUrl = videoLink || video?.currentSrc || video?.src || video?.querySelector('source')?.src || '';
-      const media = video || image;
-      const src = videoUrl || media?.currentSrc || media?.src || '';
+      const isVideo = Boolean(videoUrl && (
+        /\.(?:mp4|webm|mov|m4v)/i.test(videoUrl) ||
+        video instanceof HTMLVideoElement ||
+        /video/i.test(tid)
+      ));
+      const media = isVideo ? (video || el) : image;
+      const src = isVideo ? videoUrl : (image?.currentSrc || image?.src || '');
 
       if (src && !seen.has(src)) {
         seen.add(src);
-        const isVideo =
-          Boolean(videoUrl) ||
-          video instanceof HTMLVideoElement ||
-          /video/i.test(tid) ||
-          /\.(?:mp4|webm|mov|m4v)/i.test(src);
         const w = video?.videoWidth || image?.naturalWidth || video?.clientWidth || el.clientWidth || 0;
         const h = video?.videoHeight || image?.naturalHeight || video?.clientHeight || el.clientHeight || 0;
 
@@ -431,28 +431,33 @@
         return a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1;
       });
 
+      const isMuseStillGenerating = Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
+
       const best = measured[0];
       if (best) {
-        const media = mediaType === 'video'
-          ? (best.el.querySelector('video') || (best.el.matches('video') ? best.el : null))
-          : (best.el.querySelector('img') || (best.el.matches('img') ? best.el : null));
-        let src = mediaType === 'video'
-          ? (best.videoUrl || media?.currentSrc || media?.src || best.src || '')
-          : (media?.currentSrc || media?.src || best.src || '');
+        if (mediaType === 'video') {
+          const videoEl = best.el.querySelector('video') || (best.el.matches('video') ? best.el : null);
+          const videoSrc = best.videoUrl || videoEl?.currentSrc || videoEl?.src || videoEl?.querySelector('source')?.src;
 
-        if (src) {
-          let endFrame = null;
-          let finalUrl = src;
-
-          if (mediaType === 'image') {
-            finalUrl = await imageToDataUrl(media || src);
-          } else if (mediaType === 'video') {
-            const posterImg = best.el.querySelector('img');
-            endFrame = media?.poster || (posterImg ? await imageToDataUrl(posterImg) : null);
+          // NẾU Muse vẫn đang sinh (nút Stop còn hiện) HOẶC chưa có URL video thực thụ (.mp4/.webm):
+          // TUYỆT ĐỐI KHÔNG ĐƯỢC KẾT THÚC! Tiếp tục đợi Muse render xong video!
+          if (isMuseStillGenerating || !videoSrc || videoSrc.length < 5 || /\/v\/\d+/i.test(videoSrc)) {
+            await delay(1000, signal);
+            continue;
           }
 
-          console.log('[HosiFlow Bridge] Đã phát hiện media khớp:', finalUrl ? (finalUrl.slice(0, 50) + '...') : '');
-          return { ok: true, url: finalUrl, endFrame };
+          const posterImg = best.el.querySelector('img');
+          const endFrame = videoEl?.poster || (posterImg ? await imageToDataUrl(posterImg) : null);
+          console.log('[HosiFlow Bridge] Video đã hoàn thành xuất sắc:', videoSrc);
+          return { ok: true, url: videoSrc, endFrame };
+        } else {
+          const imageEl = best.el.querySelector('img') || (best.el.matches('img') ? best.el : null);
+          const imgSrc = imageEl?.currentSrc || imageEl?.src || best.src;
+          if (imgSrc) {
+            const finalUrl = await imageToDataUrl(imageEl || imgSrc);
+            console.log('[HosiFlow Bridge] Ảnh đã hoàn thành xuất sắc:', finalUrl ? (finalUrl.slice(0, 50) + '...') : '');
+            return { ok: true, url: finalUrl, endFrame: null };
+          }
         }
       }
 
