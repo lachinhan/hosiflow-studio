@@ -33,7 +33,9 @@
               end_frame: res?.endFrame || null,
             }),
           });
-        } catch {}
+        } catch (e) {
+          console.warn('[HosiFlow Bridge] reportToLocalServer notice:', e);
+        }
       };
 
       generate(message, controller.signal)
@@ -74,8 +76,8 @@
   const activeGenerations = new Map();
 
   function clickMuseStop() {
-    const button = [...document.querySelectorAll('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"],button[aria-label*="Dừng" i]')].find(visible);
-    if (button) { button.click(); return true; }
+    const button = document.querySelector('[data-testid="hatch-composer-stop-button"]');
+    if (button && visible(button)) { button.click(); return true; }
     return false;
   }
 
@@ -115,13 +117,12 @@
     });
   }
 
-  // Chuyển đổi toàn diện ảnh (kể cả blob WEBP từ Muse) sang Base64 Data URL
+  // Chuyển đổi toàn diện ảnh sang Base64 Data URL
   async function extractImageDataUrl(imgEl) {
     if (!imgEl) return '';
     const src = imgEl.currentSrc || imgEl.src || '';
 
-    // Phương án 1: Fetch trực tiếp blob URL (blob:https://muse.ai/<UUID>)
-    // Chuẩn fetch spec cấm credentials trên blob scheme
+    // 1. Fetch trực tiếp blob URL (blob:https://muse.ai/<UUID>)
     if (src.startsWith('blob:')) {
       try {
         const response = await fetch(src);
@@ -137,7 +138,7 @@
       }
     }
 
-    // Phương án 2: Xuất trực tiếp qua Canvas (hỗ trợ cả WEBP và PNG)
+    // 2. Xuất trực tiếp qua Canvas (hỗ trợ cả WEBP và PNG)
     try {
       if (imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
         const canvas = document.createElement('canvas');
@@ -146,7 +147,6 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(imgEl, 0, 0);
 
-        // Xuất định dạng webp trước, fallback png
         let dUrl = canvas.toDataURL('image/webp');
         if (dUrl && dUrl.startsWith('data:image/webp') && dUrl.length > 200) {
           return dUrl;
@@ -160,7 +160,7 @@
       console.warn('[HosiFlow Bridge] Canvas export failed:', e);
     }
 
-    // Phương án 3: URL thông thường (https://...)
+    // 3. URL thông thường (https://...)
     if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
       try {
         const response = await fetch(src, { credentials: 'include' });
@@ -208,12 +208,8 @@
     if (referenceList.length) await attachReferences(referenceList, signal);
     throwIfAborted();
 
-    // 1. Chụp lại snapshot toàn bộ ảnh và video ĐANG CÓ trước khi submit
+    // 1. Chụp lại snapshot danh sách URL ảnh và video ĐANG CÓ trước khi submit
     const baselineImgUrls = new Set([...document.querySelectorAll('img')].map(i => i.currentSrc || i.src || '').filter(Boolean));
-    const baselineImgElements = new Set(document.querySelectorAll('img'));
-    const baselineVideoUrls = new Set([...document.querySelectorAll('video, source')].map(v => v.currentSrc || v.src || '').filter(Boolean));
-    const baselineVideoElements = new Set(document.querySelectorAll('video'));
-    const baselineCards = new Set(document.querySelectorAll('[data-testid*="attachment"]'));
     const priorBubbleTexts = new Map(assistantMessageElements().map(el => [el, (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()]));
 
     composer.scrollIntoView({ block: 'center' }); composer.focus();
@@ -250,13 +246,13 @@
     let accepted = false;
     for (let i = 0; i < 30; i++) {
       throwIfAborted();
-      if (!composer.isConnected || !composer.value.trim() || bubbleCount() > beforeSendCount || document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"],button[aria-label*="Dừng" i]')) { accepted = true; break; }
+      if (!composer.isConnected || !composer.value.trim() || bubbleCount() > beforeSendCount || document.querySelector('[data-testid="hatch-composer-stop-button"]')) { accepted = true; break; }
       await delay(100, signal);
     }
     if (!submitted || !accepted) throw new Error('Muse did not confirm the prompt submission. Check the chat box and try again; MuseFlow will not resubmit automatically.');
 
-    // Chờ 1.5 giây để Muse bắt đầu tạo tiến trình
-    await delay(1500, signal);
+    // Chờ 2 giây để Muse khởi tạo tiến trình
+    await delay(2000, signal);
 
     const deadline = Date.now() + Math.min(900, Math.max(30, Number(timeoutSec) || 600)) * 1000;
     let refusalContext = '', refusalContextSince = 0;
@@ -264,52 +260,40 @@
     while (Date.now() < deadline) {
       throwIfAborted();
 
-      // Kiểm tra trạng thái đang render qua nút Stop của Muse
-      const stopButton = document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"],button[aria-label*="Dừng" i]');
-      const isStopVisible = visible(stopButton);
-
-      if (isStopVisible) {
-        // ĐANG TẠO: BẮT BUỘC ĐỢI, TUYỆT ĐỐI KHÔNG ĐƯỢC LẤY KẾT QUẢ SỚM!
-        await delay(1000, signal);
-        continue;
-      }
+      // Kiểm tra bong bóng tin nhắn mới nhất của Assistant
+      const bubbles = assistantMessageElements();
+      const latestBubble = bubbles[bubbles.length - 1];
 
       // ==========================================
       // NHÁNH 1: XỬ LÝ GENERATE IMAGE
       // ==========================================
       if (mediaType === 'image') {
-        // Tìm TẤT CẢ các thẻ <img> mới xuất hiện trong chat
-        const allNewImages = [...document.querySelectorAll('img')].filter(img => {
-          if (!img || !img.isConnected) return false;
-          if (img.closest('form, [class*="chat-user-bubble"], [data-testid="hatch-composer-placeholder-overlay"]')) return false;
+        // Tìm ảnh mới nhất trong bubble cuối cùng của Assistant hoặc trên toàn trang
+        let targetImg = latestBubble ? latestBubble.querySelector('img') : null;
+        if (!targetImg) {
+          const allImgs = [...document.querySelectorAll('img')].filter(img => {
+            if (!img || !img.isConnected) return false;
+            if (img.closest('form, [class*="chat-user-bubble"], [data-testid="hatch-composer-placeholder-overlay"]')) return false;
+            const src = img.currentSrc || img.src || '';
+            if (!src || /avatar|icon|logo|badge|emoji|\.svg/i.test(src)) return false;
+            return !baselineImgUrls.has(src);
+          });
+          targetImg = allImgs[allImgs.length - 1] || null;
+        }
 
-          const src = img.currentSrc || img.src || '';
-          if (!src) return false;
-          if (/avatar|icon|logo|badge|emoji|\.svg/i.test(src)) return false;
-
-          // Loại trừ ảnh đã có từ trước khi gửi prompt
-          if (baselineImgElements.has(img) || baselineImgUrls.has(src)) return false;
-
-          // Điều kiện nhận diện ảnh hợp lệ: có UUID hoặc kích thước ảnh decode thực tế > 64px
+        if (targetImg) {
+          const src = targetImg.currentSrc || targetImg.src || '';
           const hasUuid = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/.test(src);
-          const isDecoded = (img.naturalWidth > 64 && img.naturalHeight > 64);
-          return hasUuid || isDecoded;
-        });
+          const isLoaded = targetImg.complete && targetImg.naturalWidth > 64;
 
-        if (allNewImages.length > 0) {
-          const targetImg = allNewImages[allNewImages.length - 1]; // Lấy ảnh mới nhất vừa được Muse tạo ra
-
-          // Đợi ảnh hoàn tất giải mã trong bộ nhớ (tối đa 3 giây)
-          if (!targetImg.complete || targetImg.naturalWidth === 0) {
-            await delay(500, signal);
-          }
-
-          console.log('[HosiFlow Bridge] 🎯 Đã phát hiện ảnh mới từ Muse:', targetImg.naturalWidth, 'x', targetImg.naturalHeight, targetImg.currentSrc || targetImg.src);
-
-          const dataUrl = await extractImageDataUrl(targetImg);
-          if (dataUrl && dataUrl.startsWith('data:image/')) {
-            console.log('[HosiFlow Bridge] ✅ Hoàn thành trích xuất ảnh thành Base64 Data URL (size:', dataUrl.length, ')');
-            return { ok: true, url: dataUrl };
+          // Nếu ảnh là ảnh mới và đã tải xong
+          if (!baselineImgUrls.has(src) && (hasUuid || isLoaded)) {
+            console.log('[HosiFlow Bridge] 🎯 Phát hiện ảnh mới từ Muse:', targetImg.naturalWidth, 'x', targetImg.naturalHeight, src);
+            const dataUrl = await extractImageDataUrl(targetImg);
+            if (dataUrl && dataUrl.startsWith('data:image/')) {
+              console.log('[HosiFlow Bridge] ✅ Trích xuất thành công Base64 Data URL (size:', dataUrl.length, ')');
+              return { ok: true, url: dataUrl };
+            }
           }
         }
       }
@@ -318,18 +302,9 @@
       // NHÁNH 2: XỬ LÝ GENERATE VIDEO
       // ==========================================
       if (mediaType === 'video') {
-        // Tìm các thẻ video mới hoặc attachment cards mới
-        const newCards = [...document.querySelectorAll('[data-testid*="attachment"]')].filter(el => !baselineCards.has(el));
-        const videoCards = newCards.filter(el => {
-          const tid = el.getAttribute('data-testid') || '';
-          return /video/i.test(tid) || el.querySelector('video') !== null;
-        });
-
-        const activeCard = videoCards.length > 0 ? videoCards[videoCards.length - 1] : (newCards.length > 0 ? newCards[newCards.length - 1] : null);
-
-        if (activeCard) {
-          // Bấm Play nếu cần để Muse stream video
-          const playBtn = activeCard.querySelector('button[aria-label*="play" i], [class*="play" i], [role="button"]') || activeCard;
+        // Nếu có nút play thì bấm để Muse stream video
+        if (latestBubble) {
+          const playBtn = latestBubble.querySelector('button[aria-label*="play" i], [class*="play" i], [role="button"]');
           if (playBtn && !playBtn.hasAttribute('data-hf-played')) {
             playBtn.setAttribute('data-hf-played', 'true');
             try { playBtn.click(); } catch {}
@@ -337,8 +312,8 @@
           }
         }
 
-        // Quét tìm UUID 36 ký tự từ toàn bộ DOM mới sinh ra
-        const searchStr = `${activeCard ? activeCard.outerHTML : ''} ${document.body.innerHTML.slice(-12000)}`;
+        // Quét tìm UUID 36 ký tự từ bong bóng tin nhắn mới nhất
+        const searchStr = `${latestBubble ? latestBubble.outerHTML : ''} ${document.body.innerHTML.slice(-12000)}`;
         const uuidMatch = searchStr.match(/blob:https?:\/\/[^\/"'\s]+\/([0-9a-fA-F-]{36})/i) ||
                           searchStr.match(/([0-9a-fA-F-]{36})\.mp4/i) ||
                           searchStr.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i);
@@ -348,7 +323,7 @@
           console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Muse:', uuid);
 
           let endFrame = null;
-          const posterImg = (activeCard ? activeCard.querySelector('img') : null) || document.querySelector('img[src*="muse.ai"]');
+          const posterImg = (latestBubble ? latestBubble.querySelector('img') : null) || document.querySelector('img[src*="muse.ai"]');
           if (posterImg) {
             endFrame = await extractImageDataUrl(posterImg);
           }
@@ -358,7 +333,7 @@
           return { ok: true, url: videoUrl, endFrame };
         }
 
-        const videoEl = document.querySelector('video');
+        const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
         const directSrc = videoEl?.currentSrc || videoEl?.src || '';
         if (directSrc && !directSrc.startsWith('blob:') && !directSrc.startsWith('data:') && /\.(mp4|webm)/i.test(directSrc)) {
           return { ok: true, url: directSrc };
@@ -371,13 +346,13 @@
         if (currentContext !== refusalContext) { refusalContext = currentContext; refusalContextSince = Date.now(); }
         const clearRefusal = inability.test(currentContext) && sceneContext.test(currentContext) && offerAlternative.test(currentContext);
         if (clearRefusal || Date.now() - refusalContextSince >= 1200) {
-          if (isStopVisible) clickMuseStop();
+          clickMuseStop();
           const error = new Error(`Muse từ chối tạo cảnh này: ${currentContext.slice(-600)}`);
           error.code = 'SCENE_REFUSED'; throw error;
         }
       } else { refusalContext = ''; refusalContextSince = 0; }
 
-      await delay(500, signal);
+      await delay(600, signal);
     }
 
     throwIfAborted();
@@ -481,7 +456,7 @@
     const deadline = Date.now() + (Number(timeoutSec) || 180) * 1000;
     while (Date.now() < deadline) {
       if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError');
-      const stopBtn = document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i]');
+      const stopBtn = document.querySelector('[data-testid="hatch-composer-stop-button"]');
       if (!stopBtn) {
         const bubbles = assistantMessageElements();
         if (bubbles.length > 0) {
