@@ -329,44 +329,51 @@
             endFrame = await extractImageDataUrl(posterImg);
           }
 
-          // 2. Chuyển đổi video sang Base64 Data URL để HosiFlow Studio phát trực tiếp, không bị lỗi 401 Unauthorized
-          let videoDataUrl = '';
+          // 2. Tìm TẤT CẢ các đường dẫn blob video khả dĩ
           const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
-          const blobSrc = videoEl?.currentSrc || videoEl?.src || '';
+          const candidateUrls = [
+            uuidMatch[0].startsWith('blob:') ? uuidMatch[0] : null,
+            `blob:https://muse.ai/${uuid}`,
+            videoEl?.currentSrc,
+            videoEl?.src,
+            ...[...document.querySelectorAll('video source[src], source[src], [data-video-src], [data-download-url], a[href*="blob:"]')].map(el => el.currentSrc || el.src || el.href || el.getAttribute('data-video-src') || el.getAttribute('data-download-url'))
+          ].filter(Boolean);
 
-          if (blobSrc && blobSrc.startsWith('blob:')) {
+          let videoDataUrl = '';
+          for (const candUrl of candidateUrls) {
+            if (videoDataUrl) break;
             try {
-              const res = await fetch(blobSrc);
+              console.log('[HosiFlow Bridge] Đang nạp video blob từ:', candUrl);
+              const res = await fetch(candUrl);
               if (res.ok) {
                 const b = await res.blob();
+                console.log('[HosiFlow Bridge] Đã nhận blob size:', b.size, 'type:', b.type);
                 if (b && b.size > 1000) {
                   videoDataUrl = await blobToDataUrl(b);
-                  console.log('[HosiFlow Bridge] ✅ Đã nạp video blob thành Data URL:', b.size, 'bytes');
+                  console.log('[HosiFlow Bridge] ✅ Đã nạp video thành công sang Data URL! Size:', videoDataUrl.length);
+                  break;
                 }
               }
-            } catch (e) {
-              console.warn('[HosiFlow Bridge] Fetch video blob failed:', e);
+            } catch (err) {
+              console.warn('[HosiFlow Bridge] Fetch candidate blob thất bại:', candUrl, err);
             }
           }
 
-          if (!videoDataUrl) {
-            try {
-              const res = await fetch(`https://muse.ai/${uuid}.mp4`, { credentials: 'include' });
-              if (res.ok) {
-                const b = await res.blob();
-                if (b && b.size > 1000) {
-                  videoDataUrl = await blobToDataUrl(b);
-                  console.log('[HosiFlow Bridge] ✅ Đã tải video mp4 thành Data URL:', b.size, 'bytes');
-                }
-              }
-            } catch (e) {
-              console.warn('[HosiFlow Bridge] Fetch https mp4 failed:', e);
-            }
+          // 3. Nếu đã nạp thành công Video Base64 Data URL -> trả về ngay cho Studio!
+          if (videoDataUrl && videoDataUrl.startsWith('data:video/')) {
+            console.log('[HosiFlow Bridge] ✅ HOÀN THÀNH TẠO VIDEO (Data URL size:', videoDataUrl.length, ')');
+            return { ok: true, url: videoDataUrl, endFrame };
           }
 
-          const finalVideoUrl = videoDataUrl || `https://muse.ai/${uuid}.mp4`;
-          console.log('[HosiFlow Bridge] ✅ Trả về video kết quả:', finalVideoUrl.slice(0, 60));
-          return { ok: true, url: finalVideoUrl, endFrame };
+          // 4. Nếu chưa nạp được blob video -> TUYỆT ĐỐI KHÔNG TRẢ VỀ link 401!
+          // Kích hoạt lại nút play nếu có và tiếp tục đợi trong vòng lặp while
+          const playBtn = latestBubble ? latestBubble.querySelector('button[aria-label*="play" i], [class*="play" i], [role="button"]') : null;
+          if (playBtn) {
+            try { playBtn.click(); } catch {}
+          }
+          console.log('[HosiFlow Bridge] Đang đợi Muse mount blob video stream...');
+          await delay(1000, signal);
+          continue;
         }
 
         const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
