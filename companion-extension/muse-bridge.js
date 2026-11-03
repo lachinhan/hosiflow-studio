@@ -189,10 +189,9 @@
             /video\//i.test(item.type) ||
             /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url) ||
             /\.(?:mp4|webm|mov|m4v)$/i.test(item.download) ||
-            /\/v\/|\/video\//i.test(item.url) ||
             (item.download && /\.(?:mp4|webm|mov|m4v)/i.test(item.download))
         )?.url || '';
-      const videoUrl = videoLink || video?.currentSrc || video?.src || video?.querySelector('source')?.src || video?.getAttribute('data-src') || video?.getAttribute('src') || '';
+      const videoUrl = videoLink || video?.currentSrc || video?.src || video?.querySelector('source')?.src || '';
       const media = video || image;
       const src = videoUrl || media?.currentSrc || media?.src || '';
 
@@ -251,6 +250,24 @@
     const sceneContext=/(?:cảnh|bản|đoạn|video|ảnh|nội dung|yêu cầu|này)/i;
     const offerAlternative=/(?:bản|phiên bản|phương án)\s+tương\s+đương|tương\s+đương.{0,100}(?:bám|theo|kịch bản)|muốn.{0,100}(?:tạo mới|thử lại|làm lại)|(?:would you like|do you want|want me to).{0,100}(?:create|make|generate|try)|equivalent alternative/i;
     return explicit.test(text)||inability.test(text)&&(sceneContext.test(text)||offerAlternative.test(text));
+  }
+
+  function clickElement(el) {
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest' });
+    try { el.focus(); } catch {}
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    el.click();
+  }
+
+  function findAnimateButton() {
+    const candidates = [...document.querySelectorAll('button, [role="button"], div, span, a')].filter(visible);
+    return candidates.find(el => {
+      if (el.children.length > 2) return false;
+      const text = (el.innerText || el.textContent || '').trim();
+      return /animate.*video|animate this|animate into|tạo video/i.test(text) && text.length < 80;
+    }) || null;
   }
 
   async function generate({prompt,timeoutSec=600,mediaType='image',referenceImage='',referenceImages=[],size='16:9',requestId},signal) {
@@ -327,22 +344,21 @@
       const fresh=attachments().filter(a=>!baseline.has(a.src));
       const matching=fresh.filter(a=>mediaType==='video'?a.isVideo:!a.isVideo);
       const wrongMedia=fresh.find(a=>mediaType==='image'?a.isVideo:!a.isVideo);
-      if(wrongMedia){
-        if (mediaType === 'video') {
-          const animateBtn = [...document.querySelectorAll('button, [role="button"]')].filter(visible).find(b =>
-            /animate.*video|animate this|animate into|tạo video/i.test(`${b.getAttribute('aria-label') || ''} ${b.innerText || ''}`)
-          );
-          if (animateBtn && !animateBtn.disabled) {
-            console.log('[HosiFlow Bridge] Đang bấm nút Animate video...');
-            animateBtn.click();
-            wrongMediaSince = 0;
-            await delay(1500, signal);
-            continue;
-          }
+      if (mediaType === 'video') {
+        const animateBtn = findAnimateButton();
+        if (animateBtn) {
+          console.log('[HosiFlow Bridge] Đang bấm nút Animate video...', animateBtn);
+          clickElement(animateBtn);
+          wrongMediaSince = 0;
+          await delay(2000, signal);
+          continue;
         }
+      }
+      if(wrongMedia){
         const stopBtn = Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
-        if(!stopBtn && !wrongMediaSince) wrongMediaSince=Date.now();
-        if(!stopBtn && wrongMediaSince && (Date.now()-wrongMediaSince>=30000)){
+        const hasAnimate = mediaType === 'video' ? Boolean(findAnimateButton()) : false;
+        if(!stopBtn && !hasAnimate && !wrongMediaSince) wrongMediaSince=Date.now();
+        if(!stopBtn && !hasAnimate && wrongMediaSince && (Date.now()-wrongMediaSince>=30000)){
           const expected=mediaType==='image'?'image':'video',actual=mediaType==='image'?'video':'image';
           const error=new Error(`Muse returned a ${actual} for a Generate ${expected==='image'?'Image':'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);
           error.code='MEDIA_TYPE_MISMATCH';
@@ -351,7 +367,7 @@
       }
       else wrongMediaSince=0;
       const [ratioW,ratioH]=String(size||'16:9').split(':').map(Number),expectedRatio=ratioW>0&&ratioH>0?ratioW/ratioH:1;
-      const candidates = matching.length > 0 ? matching : fresh.filter((a) => (mediaType === 'video' ? a.isVideo : true));
+      const candidates = matching;
       const measured = candidates.sort((a,b)=>{
         const wA = a.width || 16, hA = a.height || 9;
         const wB = b.width || 16, hB = b.height || 9;
