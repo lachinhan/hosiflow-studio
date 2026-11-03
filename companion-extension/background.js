@@ -60,52 +60,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ alive: true });
     return false;
   }
-  if (message?.type === 'MUSEFLOW_EXTRACT_VIDEO_BLOB') {
-    const tabId = sender?.tab?.id;
-    const uuid = message.uuid;
-    if (!tabId || !uuid) {
-      sendResponse({ ok: false, error: 'Thiếu tabId hoặc uuid' });
-      return false;
-    }
-
-    chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: async (vidUuid) => {
-        const candidates = [
-          'blob:https://muse.ai/' + vidUuid,
-          'blob:https://www.muse.ai/' + vidUuid,
-          ...[...document.querySelectorAll('video, source, a[href*="blob:"]')].map(el => el.currentSrc || el.src || el.href),
-          ...[...document.body.innerHTML.matchAll(/blob:https?:\/\/[^"'\s<>)]+/g)].map(m => m[0])
-        ].filter(Boolean);
-
-        for (const url of candidates) {
-          try {
-            const res = await fetch(url);
-            if (res.ok) {
-              const b = await res.blob();
-              if (b && b.size > 10000) {
-                return await new Promise((resolve) => {
-                  const reader = new FileReader();
-                  reader.onload = () => resolve(reader.result);
-                  reader.onerror = () => resolve('');
-                  reader.readAsDataURL(b);
-                });
-              }
-            }
-          } catch {}
-        }
-        return '';
-      },
-      args: [uuid]
-    }).then(results => {
-      const dataUrl = results?.[0]?.result || '';
-      sendResponse({ ok: Boolean(dataUrl), dataUrl });
-    }).catch(err => {
-      sendResponse({ ok: false, error: err.message || String(err) });
-    });
-    return true; // async
-  }
   return false;
 });
 
