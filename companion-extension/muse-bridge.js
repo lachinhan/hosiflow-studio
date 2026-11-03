@@ -308,7 +308,7 @@
           if (playBtn && !playBtn.hasAttribute('data-hf-played')) {
             playBtn.setAttribute('data-hf-played', 'true');
             try { playBtn.click(); } catch {}
-            await delay(600, signal);
+            await delay(800, signal);
           }
         }
 
@@ -322,15 +322,51 @@
           const uuid = uuidMatch[1];
           console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Muse:', uuid);
 
+          // 1. Trích xuất endFrame poster
           let endFrame = null;
           const posterImg = (latestBubble ? latestBubble.querySelector('img') : null) || document.querySelector('img[src*="muse.ai"]');
           if (posterImg) {
             endFrame = await extractImageDataUrl(posterImg);
           }
 
-          const videoUrl = `https://muse.ai/${uuid}.mp4`;
-          console.log('[HosiFlow Bridge] ✅ Trả về video URL chính thức:', videoUrl);
-          return { ok: true, url: videoUrl, endFrame };
+          // 2. Chuyển đổi video sang Base64 Data URL để HosiFlow Studio phát trực tiếp, không bị lỗi 401 Unauthorized
+          let videoDataUrl = '';
+          const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
+          const blobSrc = videoEl?.currentSrc || videoEl?.src || '';
+
+          if (blobSrc && blobSrc.startsWith('blob:')) {
+            try {
+              const res = await fetch(blobSrc);
+              if (res.ok) {
+                const b = await res.blob();
+                if (b && b.size > 1000) {
+                  videoDataUrl = await blobToDataUrl(b);
+                  console.log('[HosiFlow Bridge] ✅ Đã nạp video blob thành Data URL:', b.size, 'bytes');
+                }
+              }
+            } catch (e) {
+              console.warn('[HosiFlow Bridge] Fetch video blob failed:', e);
+            }
+          }
+
+          if (!videoDataUrl) {
+            try {
+              const res = await fetch(`https://muse.ai/${uuid}.mp4`, { credentials: 'include' });
+              if (res.ok) {
+                const b = await res.blob();
+                if (b && b.size > 1000) {
+                  videoDataUrl = await blobToDataUrl(b);
+                  console.log('[HosiFlow Bridge] ✅ Đã tải video mp4 thành Data URL:', b.size, 'bytes');
+                }
+              }
+            } catch (e) {
+              console.warn('[HosiFlow Bridge] Fetch https mp4 failed:', e);
+            }
+          }
+
+          const finalVideoUrl = videoDataUrl || `https://muse.ai/${uuid}.mp4`;
+          console.log('[HosiFlow Bridge] ✅ Trả về video kết quả:', finalVideoUrl.slice(0, 60));
+          return { ok: true, url: finalVideoUrl, endFrame };
         }
 
         const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
