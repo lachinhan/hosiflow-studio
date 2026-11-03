@@ -264,6 +264,7 @@ async function pollAndExecuteJob(tabId) {
     }
   } catch (err) {
     console.error('[HosiFlow Companion] pollAndExecuteJob error:', err);
+    isProcessingJob = false;
   }
 }
 

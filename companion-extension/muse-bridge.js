@@ -252,6 +252,8 @@
     return explicit.test(text)||inability.test(text)&&(sceneContext.test(text)||offerAlternative.test(text));
   }
 
+  const clickedAnimateButtons = new WeakSet();
+
   function clickElement(el) {
     if (!el) return;
     el.scrollIntoView({ block: 'nearest' });
@@ -264,10 +266,44 @@
   function findAnimateButton() {
     const candidates = [...document.querySelectorAll('button, [role="button"], div, span, a')].filter(visible);
     return candidates.find(el => {
+      if (clickedAnimateButtons.has(el)) return false;
+      if (el.getAttribute('data-hosiflow-clicked') === 'true') return false;
       if (el.children.length > 2) return false;
       const text = (el.innerText || el.textContent || '').trim();
       return /animate.*video|animate this|animate into|tạo video/i.test(text) && text.length < 80;
     }) || null;
+  }
+
+  async function imageToDataUrl(elementOrUrl) {
+    try {
+      if (elementOrUrl instanceof HTMLImageElement && elementOrUrl.complete && elementOrUrl.naturalWidth > 0) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = elementOrUrl.naturalWidth;
+          canvas.height = elementOrUrl.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(elementOrUrl, 0, 0);
+          const dataUrl = canvas.toDataURL('image/png');
+          if (dataUrl && dataUrl.length > 100) return dataUrl;
+        } catch {}
+      }
+
+      const url = typeof elementOrUrl === 'string' ? elementOrUrl : (elementOrUrl?.currentSrc || elementOrUrl?.src);
+      if (!url) return '';
+      if (url.startsWith('data:image')) return url;
+
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) return url;
+      const blob = await res.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result || url);
+        reader.onerror = () => resolve(url);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return typeof elementOrUrl === 'string' ? elementOrUrl : (elementOrUrl?.currentSrc || elementOrUrl?.src || '');
+    }
   }
 
   async function generate({prompt,timeoutSec=600,mediaType='image',referenceImage='',referenceImages=[],size='16:9',requestId},signal) {
@@ -347,10 +383,12 @@
       if (mediaType === 'video') {
         const animateBtn = findAnimateButton();
         if (animateBtn) {
-          console.log('[HosiFlow Bridge] Đang bấm nút Animate video...', animateBtn);
+          console.log('[HosiFlow Bridge] Đã phát hiện nút Animate video từ Muse, bấm 1 lần duy nhất...', animateBtn);
+          clickedAnimateButtons.add(animateBtn);
+          try { animateBtn.setAttribute('data-hosiflow-clicked', 'true'); } catch {}
           clickElement(animateBtn);
           wrongMediaSince = 0;
-          await delay(2000, signal);
+          await delay(2500, signal);
           continue;
         }
       }
@@ -388,11 +426,17 @@
 
         if (src) {
           let endFrame = null;
-          if (mediaType === 'video') {
-            endFrame = media?.poster || best.el.querySelector('img')?.src || null;
+          let finalUrl = src;
+
+          if (mediaType === 'image') {
+            finalUrl = await imageToDataUrl(media || src);
+          } else if (mediaType === 'video') {
+            const posterImg = best.el.querySelector('img');
+            endFrame = media?.poster || (posterImg ? await imageToDataUrl(posterImg) : null);
           }
-          console.log('[HosiFlow Bridge] Đã phát hiện media khớp:', src);
-          return { ok: true, url: src, endFrame };
+
+          console.log('[HosiFlow Bridge] Đã phát hiện media khớp:', finalUrl ? (finalUrl.slice(0, 50) + '...') : '');
+          return { ok: true, url: finalUrl, endFrame };
         }
       }
 
