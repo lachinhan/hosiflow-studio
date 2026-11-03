@@ -111,7 +111,7 @@
     const cancel=()=>{clearTimeout(timer);signal?.removeEventListener('abort',cancel);reject(new DOMException('Generation stopped by user.','AbortError'));};
     signal?.addEventListener('abort',cancel,{once:true});
   });
-  const attachmentSelector='[data-testid^="hatch-chat-attachment-presentation-"], [data-testid*="video" i], video, div:has(> video)';
+  const attachmentSelector='[data-testid^="hatch-chat-attachment-presentation-image"], [data-testid^="hatch-chat-attachment-presentation-video"], [data-testid*="video" i], video';
   const activeGenerations=new Map();
 
   function clickMuseStop(){
@@ -148,7 +148,7 @@
     const elements = [...document.querySelectorAll(attachmentSelector)];
 
     document.querySelectorAll('video, a[href*=".mp4"], a[href*=".webm"], [data-video-src], [data-download-url]').forEach((v) => {
-      const parent = v.closest('[data-testid^="hatch-chat-attachment-presentation-"]') || v.parentElement || v;
+      const parent = v.closest('[data-testid^="hatch-chat-attachment-presentation-video"]') || v.parentElement || v;
       if (!elements.includes(parent)) {
         elements.push(parent);
       }
@@ -166,8 +166,24 @@
       }
 
       const tid = el.getAttribute('data-testid') || '';
+      // Bỏ qua mọi attachment là file, code, script, json, document
+      if (/file|code|script|document|text|json/i.test(tid)) {
+        continue;
+      }
+
       const video = el.matches('video') ? el : el.querySelector('video');
       const image = el.matches('img') ? el : el.querySelector('img');
+
+      // Bỏ qua các icon file hoặc icon giao diện
+      if (!video && image) {
+        const imgSrc = image.currentSrc || image.src || '';
+        if (/icon|badge|avatar|document|file|\.svg/i.test(imgSrc)) {
+          continue;
+        }
+        if (image.naturalWidth > 0 && (image.naturalWidth < 180 || image.naturalHeight < 180)) {
+          continue;
+        }
+      }
 
       const urls = [
         ...el.querySelectorAll('a[href], video source[src], source[src], [data-video-src], [data-download-url]'),
