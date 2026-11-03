@@ -329,33 +329,44 @@
             endFrame = await extractImageDataUrl(posterImg);
           }
 
-          // 2. Tìm TẤT CẢ các đường dẫn blob video khả dĩ
-          const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
-          const candidateUrls = [
-            uuidMatch[0].startsWith('blob:') ? uuidMatch[0] : null,
-            `blob:https://muse.ai/${uuid}`,
-            videoEl?.currentSrc,
-            videoEl?.src,
-            ...[...document.querySelectorAll('video source[src], source[src], [data-video-src], [data-download-url], a[href*="blob:"]')].map(el => el.currentSrc || el.src || el.href || el.getAttribute('data-video-src') || el.getAttribute('data-download-url'))
-          ].filter(Boolean);
-
+          // 2. Chuyển đổi video sang Base64 Data URL thông qua MAIN WORLD để đọc blob trực tiếp
           let videoDataUrl = '';
-          for (const candUrl of candidateUrls) {
-            if (videoDataUrl) break;
-            try {
-              console.log('[HosiFlow Bridge] Đang nạp video blob từ:', candUrl);
-              const res = await fetch(candUrl);
-              if (res.ok) {
-                const b = await res.blob();
-                console.log('[HosiFlow Bridge] Đã nhận blob size:', b.size, 'type:', b.type);
-                if (b && b.size > 1000) {
-                  videoDataUrl = await blobToDataUrl(b);
-                  console.log('[HosiFlow Bridge] ✅ Đã nạp video thành công sang Data URL! Size:', videoDataUrl.length);
-                  break;
+
+          // Cách A: Nhờ background service worker thực thi hàm trong Main World (tránh lỗi Isolated World cấm đọc blob)
+          try {
+            const bgReply = await chrome.runtime.sendMessage({ type: 'MUSEFLOW_EXTRACT_VIDEO_BLOB', uuid });
+            if (bgReply?.ok && bgReply?.dataUrl) {
+              videoDataUrl = bgReply.dataUrl;
+              console.log('[HosiFlow Bridge] ✅ Nhận video Data URL từ Main World:', videoDataUrl.length);
+            }
+          } catch (e) {
+            console.warn('[HosiFlow Bridge] Request Main World extract failed:', e);
+          }
+
+          // Cách B: Quét trực tiếp các candidate blob trong content script
+          if (!videoDataUrl) {
+            const videoEl = latestBubble ? latestBubble.querySelector('video') : document.querySelector('video');
+            const candidateUrls = [
+              uuidMatch[0].startsWith('blob:') ? uuidMatch[0] : null,
+              `blob:https://muse.ai/${uuid}`,
+              videoEl?.currentSrc,
+              videoEl?.src,
+              ...[...document.querySelectorAll('video source[src], source[src], [data-video-src], [data-download-url], a[href*="blob:"]')].map(el => el.currentSrc || el.src || el.href || el.getAttribute('data-video-src') || el.getAttribute('data-download-url'))
+            ].filter(Boolean);
+
+            for (const candUrl of candidateUrls) {
+              if (videoDataUrl) break;
+              try {
+                const res = await fetch(candUrl);
+                if (res.ok) {
+                  const b = await res.blob();
+                  if (b && b.size > 1000) {
+                    videoDataUrl = await blobToDataUrl(b);
+                    console.log('[HosiFlow Bridge] ✅ Đã nạp video blob thành công:', b.size, 'bytes');
+                    break;
+                  }
                 }
-              }
-            } catch (err) {
-              console.warn('[HosiFlow Bridge] Fetch candidate blob thất bại:', candUrl, err);
+              } catch (err) {}
             }
           }
 
@@ -365,8 +376,7 @@
             return { ok: true, url: videoDataUrl, endFrame };
           }
 
-          // 4. Nếu chưa nạp được blob video -> TUYỆT ĐỐI KHÔNG TRẢ VỀ link 401!
-          // Kích hoạt lại nút play nếu có và tiếp tục đợi trong vòng lặp while
+          // 4. Nếu chưa nạp được blob video -> tiếp tục đợi trong vòng lặp while
           const playBtn = latestBubble ? latestBubble.querySelector('button[aria-label*="play" i], [class*="play" i], [role="button"]') : null;
           if (playBtn) {
             try { playBtn.click(); } catch {}
