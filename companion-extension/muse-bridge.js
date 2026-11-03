@@ -381,41 +381,6 @@
       }
 
       const stop=Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
-
-      // Khi Muse đã tạo xong (nút Stop biến mất): Quét trực tiếp để không bị lọt
-      if (!stop) {
-        if (mediaType === 'video') {
-          // 1. Quét toàn bộ thẻ video mới
-          const allVideos = [...document.querySelectorAll('video')];
-          for (const v of allVideos.reverse()) {
-            const vSrc = v.currentSrc || v.src || v.querySelector('source')?.src || v.getAttribute('src') || v.getAttribute('data-src');
-            if (vSrc && !baseline.has(vSrc)) {
-              console.log('[HosiFlow Bridge] Quét thấy thẻ video trực tiếp hoàn tất:', vSrc);
-              return { ok: true, url: vSrc, endFrame: v.poster || null };
-            }
-          }
-          // 2. Quét liên kết video mp4/webm/v
-          const vLinks = [...document.querySelectorAll('a[href*=".mp4"], a[href*=".webm"], a[href*="/v/"], [data-video-src], [data-download-url]')];
-          for (const a of vLinks.reverse()) {
-            const aSrc = a.getAttribute('data-video-src') || a.getAttribute('data-download-url') || a.href;
-            if (aSrc && !baseline.has(aSrc)) {
-              console.log('[HosiFlow Bridge] Quét thấy link video hoàn tất:', aSrc);
-              return { ok: true, url: aSrc, endFrame: null };
-            }
-          }
-        } else {
-          const bubbles = assistantMessageElements();
-          const latestBubble = bubbles[bubbles.length - 1];
-          if (latestBubble) {
-            const img = latestBubble.querySelector('img');
-            const imgSrc = img?.currentSrc || img?.src;
-            if (imgSrc && !baseline.has(imgSrc)) {
-              console.log('[HosiFlow Bridge] Quét thấy ảnh hoàn tất từ bubble cuối:', imgSrc);
-              return { ok: true, url: imgSrc, endFrame: null };
-            }
-          }
-        }
-      }
       const currentContext=readNewAssistantContext(priorBubbleTexts),refusal=isRefusalContext(currentContext);
       if(refusal){
         if(currentContext!==refusalContext){refusalContext=currentContext;refusalContextSince=Date.now();}
@@ -440,12 +405,16 @@
     const files=await Promise.all(references.map(async(reference,index)=>{
       const url=typeof reference==='string'?reference:reference?.url;
       if(!url)throw new Error(`Reference image ${index+1} has no URL.`);
-      const response=await fetch(url,{credentials:'include'});
-      if(!response.ok)throw new Error(`Could not load reference image ${index+1} (${response.status}).`);
-      const blob=await response.blob();
-      if(!blob.type.startsWith('image/')||!blob.size)throw new Error(`Reference ${index+1} is not a readable image.`);
-      const extension=(blob.type.split('/')[1]||'png').replace('jpeg','jpg').replace(/[^a-z0-9]/gi,'')||'png';
-      return new File([blob],`museflow-reference-${String(index+1).padStart(2,'0')}.${extension}`,{type:blob.type});
+      let response = await fetch(url).catch(() => null);
+      if (!response || !response.ok) {
+        response = await fetch(url, { credentials: 'include' }).catch(() => null);
+      }
+      if (!response || !response.ok) throw new Error(`Could not load reference image ${index+1} (${response?.status || 'network error'}).`);
+      const blob = await response.blob();
+      if (!blob.size) throw new Error(`Reference ${index+1} is not a readable image.`);
+      const detectedType = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/png';
+      const extension = (detectedType.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
+      return new File([blob], `museflow-reference-${String(index+1).padStart(2, '0')}.${extension}`, { type: detectedType });
     }));
     const composer=findComposer();
     let composerRoot=composer.closest('form')||composer.parentElement;
