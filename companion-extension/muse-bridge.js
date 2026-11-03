@@ -106,41 +106,75 @@
     if (!findComposer()) throw new Error('Muse chat is not ready. Open the Muse chat page and wait for the message box to load.');
   }
 
-  // Chuyển URL (kể cả blob: URL) sang Base64 Data URL an toàn tuyệt đối
-  async function fetchToDataUrl(url) {
-    if (!url) return '';
-    if (url.startsWith('data:')) return url;
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Media conversion failed.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Chuyển đổi toàn diện ảnh (kể cả blob WEBP từ Muse) sang Base64 Data URL
+  async function extractImageDataUrl(imgEl) {
+    if (!imgEl) return '';
+    const src = imgEl.currentSrc || imgEl.src || '';
+
+    // Phương án 1: Fetch trực tiếp blob URL (blob:https://muse.ai/<UUID>)
+    // Chuẩn fetch spec cấm credentials trên blob scheme
+    if (src.startsWith('blob:')) {
+      try {
+        const response = await fetch(src);
+        const blob = await response.blob();
+        if (blob && blob.size > 0) {
+          const dataUrl = await blobToDataUrl(blob);
+          if (dataUrl && dataUrl.startsWith('data:image/')) {
+            return dataUrl;
+          }
+        }
+      } catch (e) {
+        console.warn('[HosiFlow Bridge] Fetch blob failed, trying canvas:', e);
+      }
+    }
+
+    // Phương án 2: Xuất trực tiếp qua Canvas (hỗ trợ cả WEBP và PNG)
     try {
-      const isBlob = url.startsWith('blob:');
-      const response = await fetch(url, isBlob ? {} : { credentials: 'include' });
-      const blob = await response.blob();
-      if (blob && blob.size > 0) {
-        return await blobToDataUrl(blob);
+      if (imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = imgEl.naturalWidth;
+        canvas.height = imgEl.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0);
+
+        // Xuất định dạng webp trước, fallback png
+        let dUrl = canvas.toDataURL('image/webp');
+        if (dUrl && dUrl.startsWith('data:image/webp') && dUrl.length > 200) {
+          return dUrl;
+        }
+        dUrl = canvas.toDataURL('image/png');
+        if (dUrl && dUrl.startsWith('data:image/png') && dUrl.length > 200) {
+          return dUrl;
+        }
       }
     } catch (e) {
-      console.warn('[HosiFlow Bridge] fetchToDataUrl error:', e);
+      console.warn('[HosiFlow Bridge] Canvas export failed:', e);
     }
-    return '';
-  }
 
-  // Chuyển HTMLImageElement sang Data URL trực tiếp qua Canvas
-  function imageToDataUrl(imgEl) {
-    try {
-      if (!imgEl || !imgEl.naturalWidth || !imgEl.naturalHeight) return '';
-      const canvas = document.createElement('canvas');
-      canvas.width = imgEl.naturalWidth;
-      canvas.height = imgEl.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(imgEl, 0, 0);
-      return canvas.toDataURL('image/png');
-    } catch (e) {
-      console.warn('[HosiFlow Bridge] imageToDataUrl error:', e);
-      return '';
+    // Phương án 3: URL thông thường (https://...)
+    if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
+      try {
+        const response = await fetch(src, { credentials: 'include' });
+        const blob = await response.blob();
+        if (blob && blob.size > 0) {
+          return await blobToDataUrl(blob);
+        }
+      } catch (e) {
+        console.warn('[HosiFlow Bridge] Fetch https failed:', e);
+      }
     }
-  }
 
-  // Selector thẻ attachment của Muse
-  const attachmentSelector = '[data-testid^="hatch-chat-attachment-presentation-"]';
+    return src.startsWith('data:image/') ? src : '';
+  }
 
   function assistantMessageElements() {
     return [...document.querySelectorAll('div[class*="hatch-chat-groupable-bubble"],[data-message-author-role="assistant"],[data-testid*="assistant" i],[data-testid*="message-content" i],[class*="assistant-message" i],[class*="assistant-bubble" i]')].filter(el => visible(el) && !el.closest('[class*="chat-user-bubble"],[data-message-author-role="user"],[data-testid*="user-message" i]'));
@@ -174,8 +208,12 @@
     if (referenceList.length) await attachReferences(referenceList, signal);
     throwIfAborted();
 
-    // 1. Chụp lại snapshot các thẻ attachment và tin nhắn ĐANG CÓ trước khi gửi prompt
-    const baselineElements = new Set(document.querySelectorAll(attachmentSelector));
+    // 1. Chụp lại snapshot toàn bộ ảnh và video ĐANG CÓ trước khi submit
+    const baselineImgUrls = new Set([...document.querySelectorAll('img')].map(i => i.currentSrc || i.src || '').filter(Boolean));
+    const baselineImgElements = new Set(document.querySelectorAll('img'));
+    const baselineVideoUrls = new Set([...document.querySelectorAll('video, source')].map(v => v.currentSrc || v.src || '').filter(Boolean));
+    const baselineVideoElements = new Set(document.querySelectorAll('video'));
+    const baselineCards = new Set(document.querySelectorAll('[data-testid*="attachment"]'));
     const priorBubbleTexts = new Map(assistantMessageElements().map(el => [el, (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()]));
 
     composer.scrollIntoView({ block: 'center' }); composer.focus();
@@ -217,7 +255,7 @@
     }
     if (!submitted || !accepted) throw new Error('Muse did not confirm the prompt submission. Check the chat box and try again; MuseFlow will not resubmit automatically.');
 
-    // Chờ 1.5 giây để Muse bắt đầu tạo tiến trình (tránh kiểm tra quá sớm khi nút Stop chưa kịp xuất hiện)
+    // Chờ 1.5 giây để Muse bắt đầu tạo tiến trình
     await delay(1500, signal);
 
     const deadline = Date.now() + Math.min(900, Math.max(30, Number(timeoutSec) || 600)) * 1000;
@@ -231,48 +269,47 @@
       const isStopVisible = visible(stopButton);
 
       if (isStopVisible) {
-        // ĐANG TẠO: BẮT BUỘC ĐỢI, TUYỆT ĐỐI KHÔNG ĐƯỢC RETURN SỚM!
+        // ĐANG TẠO: BẮT BUỘC ĐỢI, TUYỆT ĐỐI KHÔNG ĐƯỢC LẤY KẾT QUẢ SỚM!
         await delay(1000, signal);
         continue;
       }
-
-      // CHỈ KHI NÚT STOP KHÔNG CÒN HIỂN THỊ (MUSE ĐÃ HOÀN TẤT GEN):
-      // Thu thập các thẻ attachment MỚI sinh ra sau khi submit
-      const freshCards = [...document.querySelectorAll(attachmentSelector)]
-        .filter(el => !baselineElements.has(el) && !el.closest('form, [class*="chat-user-bubble"], [data-testid="hatch-composer-placeholder-overlay"]'));
 
       // ==========================================
       // NHÁNH 1: XỬ LÝ GENERATE IMAGE
       // ==========================================
       if (mediaType === 'image') {
-        const imageCards = freshCards.filter(el => {
-          const tid = el.getAttribute('data-testid') || '';
-          return !/video/i.test(tid) && el.querySelector('video') === null;
+        // Tìm TẤT CẢ các thẻ <img> mới xuất hiện trong chat
+        const allNewImages = [...document.querySelectorAll('img')].filter(img => {
+          if (!img || !img.isConnected) return false;
+          if (img.closest('form, [class*="chat-user-bubble"], [data-testid="hatch-composer-placeholder-overlay"]')) return false;
+
+          const src = img.currentSrc || img.src || '';
+          if (!src) return false;
+          if (/avatar|icon|logo|badge|emoji|\.svg/i.test(src)) return false;
+
+          // Loại trừ ảnh đã có từ trước khi gửi prompt
+          if (baselineImgElements.has(img) || baselineImgUrls.has(src)) return false;
+
+          // Điều kiện nhận diện ảnh hợp lệ: có UUID hoặc kích thước ảnh decode thực tế > 64px
+          const hasUuid = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/.test(src);
+          const isDecoded = (img.naturalWidth > 64 && img.naturalHeight > 64);
+          return hasUuid || isDecoded;
         });
 
-        if (imageCards.length > 0) {
-          const card = imageCards[imageCards.length - 1];
-          const img = card.querySelector('img');
+        if (allNewImages.length > 0) {
+          const targetImg = allNewImages[allNewImages.length - 1]; // Lấy ảnh mới nhất vừa được Muse tạo ra
 
-          // ĐIỀU KIỆN TIÊN QUYẾT: Ảnh phải tải xong hoàn toàn và có kích thước thực > 100px!
-          if (img && img.complete && img.naturalWidth > 100 && img.naturalHeight > 100) {
-            console.log('[HosiFlow Bridge] 🎯 Đã phát hiện ảnh mới hoàn chỉnh:', img.naturalWidth, 'x', img.naturalHeight);
+          // Đợi ảnh hoàn tất giải mã trong bộ nhớ (tối đa 3 giây)
+          if (!targetImg.complete || targetImg.naturalWidth === 0) {
+            await delay(500, signal);
+          }
 
-            // 1. Chuyển thành Data URL bằng Canvas (trực tiếp từ bộ nhớ ảnh decoded của browser)
-            let dataUrl = imageToDataUrl(img);
+          console.log('[HosiFlow Bridge] 🎯 Đã phát hiện ảnh mới từ Muse:', targetImg.naturalWidth, 'x', targetImg.naturalHeight, targetImg.currentSrc || targetImg.src);
 
-            // 2. Fallback nếu canvas chưa lấy được: fetch blob URL
-            if (!dataUrl || dataUrl.length < 200) {
-              const rawSrc = img.currentSrc || img.src;
-              if (rawSrc) {
-                dataUrl = await fetchToDataUrl(rawSrc);
-              }
-            }
-
-            if (dataUrl && dataUrl.startsWith('data:image/')) {
-              console.log('[HosiFlow Bridge] ✅ Đã nạp ảnh thành Data URL thành công (size:', dataUrl.length, ')');
-              return { ok: true, url: dataUrl };
-            }
+          const dataUrl = await extractImageDataUrl(targetImg);
+          if (dataUrl && dataUrl.startsWith('data:image/')) {
+            console.log('[HosiFlow Bridge] ✅ Hoàn thành trích xuất ảnh thành Base64 Data URL (size:', dataUrl.length, ')');
+            return { ok: true, url: dataUrl };
           }
         }
       }
@@ -281,50 +318,50 @@
       // NHÁNH 2: XỬ LÝ GENERATE VIDEO
       // ==========================================
       if (mediaType === 'video') {
-        const videoCards = freshCards.filter(el => {
+        // Tìm các thẻ video mới hoặc attachment cards mới
+        const newCards = [...document.querySelectorAll('[data-testid*="attachment"]')].filter(el => !baselineCards.has(el));
+        const videoCards = newCards.filter(el => {
           const tid = el.getAttribute('data-testid') || '';
           return /video/i.test(tid) || el.querySelector('video') !== null;
         });
 
-        const videoCard = videoCards.length > 0 ? videoCards[videoCards.length - 1] : (freshCards.length > 0 ? freshCards[freshCards.length - 1] : null);
+        const activeCard = videoCards.length > 0 ? videoCards[videoCards.length - 1] : (newCards.length > 0 ? newCards[newCards.length - 1] : null);
 
-        if (videoCard) {
-          // Kích hoạt Play nếu thẻ video chưa mount
-          const playBtn = videoCard.querySelector('button[aria-label*="play" i], [class*="play" i], [role="button"]') || videoCard;
+        if (activeCard) {
+          // Bấm Play nếu cần để Muse stream video
+          const playBtn = activeCard.querySelector('button[aria-label*="play" i], [class*="play" i], [role="button"]') || activeCard;
           if (playBtn && !playBtn.hasAttribute('data-hf-played')) {
             playBtn.setAttribute('data-hf-played', 'true');
             try { playBtn.click(); } catch {}
             await delay(600, signal);
           }
+        }
 
-          const container = videoCard.closest('[class*="groupable-bubble"], [data-testid*="message" i]') || videoCard;
-          const searchStr = `${videoCard.outerHTML} ${container.outerHTML} ${document.body.innerHTML.slice(-8000)}`;
+        // Quét tìm UUID 36 ký tự từ toàn bộ DOM mới sinh ra
+        const searchStr = `${activeCard ? activeCard.outerHTML : ''} ${document.body.innerHTML.slice(-12000)}`;
+        const uuidMatch = searchStr.match(/blob:https?:\/\/[^\/"'\s]+\/([0-9a-fA-F-]{36})/i) ||
+                          searchStr.match(/([0-9a-fA-F-]{36})\.mp4/i) ||
+                          searchStr.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i);
 
-          // Bắt UUID 36 ký tự hex (chuẩn UUID của Muse)
-          const uuidMatch = searchStr.match(/blob:https?:\/\/[^\/"'\s]+\/([0-9a-fA-F-]{36})/i) ||
-                            searchStr.match(/([0-9a-fA-F-]{36})\.mp4/i) ||
-                            searchStr.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i);
+        if (uuidMatch && uuidMatch[1]) {
+          const uuid = uuidMatch[1];
+          console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Muse:', uuid);
 
-          if (uuidMatch && uuidMatch[1]) {
-            const uuid = uuidMatch[1];
-            console.log('[HosiFlow Bridge] 🎯 Đã tìm thấy UUID video từ Muse:', uuid);
-
-            let endFrame = null;
-            const img = videoCard.querySelector('img');
-            if (img && img.complete && img.naturalWidth > 50) {
-              endFrame = imageToDataUrl(img) || (await fetchToDataUrl(img.currentSrc || img.src));
-            }
-
-            const videoUrl = `https://muse.ai/${uuid}.mp4`;
-            console.log('[HosiFlow Bridge] ✅ Trả về video URL chính thức:', videoUrl);
-            return { ok: true, url: videoUrl, endFrame };
+          let endFrame = null;
+          const posterImg = (activeCard ? activeCard.querySelector('img') : null) || document.querySelector('img[src*="muse.ai"]');
+          if (posterImg) {
+            endFrame = await extractImageDataUrl(posterImg);
           }
 
-          const videoEl = videoCard.querySelector('video');
-          const directSrc = videoEl?.currentSrc || videoEl?.src || '';
-          if (directSrc && !directSrc.startsWith('blob:') && !directSrc.startsWith('data:') && /\.(mp4|webm)/i.test(directSrc)) {
-            return { ok: true, url: directSrc };
-          }
+          const videoUrl = `https://muse.ai/${uuid}.mp4`;
+          console.log('[HosiFlow Bridge] ✅ Trả về video URL chính thức:', videoUrl);
+          return { ok: true, url: videoUrl, endFrame };
+        }
+
+        const videoEl = document.querySelector('video');
+        const directSrc = videoEl?.currentSrc || videoEl?.src || '';
+        if (directSrc && !directSrc.startsWith('blob:') && !directSrc.startsWith('data:') && /\.(mp4|webm)/i.test(directSrc)) {
+          return { ok: true, url: directSrc };
         }
       }
 
@@ -423,15 +460,6 @@
     if (files.length > 1 && !input.multiple) {
       for (const file of files) await uploadBatch([file]);
     } else await uploadBatch(files);
-  }
-
-  function blobToDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(reader.error || new Error('Media conversion failed.'));
-      reader.readAsDataURL(blob);
-    });
   }
 
   async function generateScript({ prompt, timeoutSec = 180 }, signal) {
