@@ -60,6 +60,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ alive: true });
     return false;
   }
+  if (message?.type === 'MUSEFLOW_FETCH_LOCAL_URL') {
+    fetch(message.url)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const reader = new FileReader();
+        reader.onload = () => sendResponse({ ok: true, dataUrl: reader.result });
+        reader.onerror = () => sendResponse({ ok: false, error: 'Read failed' });
+        reader.readAsDataURL(blob);
+      })
+      .catch((err) => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true; // async
+  }
   return false;
 });
 
@@ -256,11 +269,33 @@ async function pollAndExecuteJob(tabId) {
       });
 
       if (reply) {
+        let finalUrl = reply.url || null;
+        if (reply.ok && finalUrl && finalUrl.startsWith('data:video/')) {
+          try {
+            const res = await fetch(finalUrl);
+            const blob = await res.blob();
+            const uploadRes = await fetch(`${API_BASE}/media/upload?id=${encodeURIComponent(job.id)}&ext=mp4`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'video/mp4' },
+              body: blob,
+            });
+            if (uploadRes.ok) {
+              const data = await uploadRes.json();
+              if (data?.ok && data?.url) {
+                finalUrl = data.url;
+                console.log('[HosiFlow Companion] 🚀 Video đã lưu thành stream URL:', finalUrl);
+              }
+            }
+          } catch (uploadErr) {
+            console.warn('[HosiFlow Companion] Upload video blob lên server thất bại, giữ Data URL:', uploadErr);
+          }
+        }
+
         await handleJobCompleted({
           jobId: job.id,
           nodeId: job.node_id,
           ok: Boolean(reply.ok),
-          url: reply.url || null,
+          url: finalUrl,
           error: reply.error || null,
           endFrame: reply.endFrame || null,
         });

@@ -328,39 +328,15 @@
           }
         }
 
-        // Tải media trực tiếp lên Local Axum Server để WebView2 và FFmpeg phát mượt mà
+        // Chuyển đổi blob sang Data URL chuẩn
         let finalUrl = '';
         if (blob && blob.size > 0) {
-          const ext = mediaType === 'video' ? 'mp4' : 'webp';
-          try {
-            const uploadUrl = `http://127.0.0.1:4826/api/media/upload?id=${encodeURIComponent(requestId)}&ext=${ext}`;
-            const uploadRes = await fetch(uploadUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': blob.type || (mediaType === 'video' ? 'video/mp4' : 'image/webp') },
-              body: blob,
-            });
-            if (uploadRes.ok) {
-              const data = await uploadRes.json();
-              if (data?.ok && data?.url) {
-                finalUrl = data.url;
-                console.log('[HosiFlow Bridge] 🚀 Đã lưu trữ cục bộ thành công:', finalUrl);
-              }
-            }
-          } catch (uploadErr) {
-            console.warn('[HosiFlow Bridge] Không thể tải media lên Local Server:', uploadErr);
-          }
-
-          // Fallback sang Base64 Data URL nếu server chưa phản hồi
-          if (!finalUrl) {
-            finalUrl = await blobToDataUrl(blob);
-            console.log('[HosiFlow Bridge] 📦 Sử dụng Base64 Data URL fallback (length:', finalUrl.length, ')');
-          }
+          finalUrl = await blobToDataUrl(blob);
         } else {
-          // Fallback cuối cùng
           finalUrl = src;
         }
 
-        console.log(`[HosiFlow Bridge] ✅ HOÀN THÀNH TẠO ${mediaType.toUpperCase()}`);
+        console.log(`[HosiFlow Bridge] ✅ HOÀN THÀNH TẠO ${mediaType.toUpperCase()} (kích thước payload: ${finalUrl.length})`);
         return { ok: true, url: finalUrl, endFrame };
       }
 
@@ -413,10 +389,21 @@
 
       let blob;
       try {
-        const fetchOptions = url.startsWith('blob:') || url.startsWith('data:') ? {} : { credentials: 'include' };
-        const response = await fetch(url, fetchOptions);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        blob = await response.blob();
+        if (url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) {
+          // Tránh Mixed Content bằng cách nhờ background service worker nạp trực tiếp qua host permissions
+          const bgRes = await chrome.runtime.sendMessage({ type: 'MUSEFLOW_FETCH_LOCAL_URL', url });
+          if (bgRes?.ok && bgRes?.dataUrl) {
+            const res = await fetch(bgRes.dataUrl);
+            blob = await res.blob();
+          } else {
+            throw new Error(bgRes?.error || 'Background fetch failed');
+          }
+        } else {
+          const fetchOptions = url.startsWith('blob:') || url.startsWith('data:') ? {} : { credentials: 'include' };
+          const response = await fetch(url, fetchOptions);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          blob = await response.blob();
+        }
       } catch (err) {
         throw new Error(`Không thể nạp reference image ${index + 1}: ${err.message}`);
       }
