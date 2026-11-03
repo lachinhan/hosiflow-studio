@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HosiFlow Companion",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Cầu nối tự động giữa HosiFlow Studio và phiên làm việc Muse.ai.",
   "action": {
     "default_title": "HosiFlow Companion",
@@ -36,4 +36,3 @@
     }
   ]
 }
-

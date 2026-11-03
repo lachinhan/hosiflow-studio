@@ -4,15 +4,25 @@
 const API_BASE = 'http://127.0.0.1:4826/api';
 let isProcessingJob = false;
 let isLoopRunning = false;
+const processedJobIds = new Set();
 
 // Đăng ký Alarm định kỳ để Service Worker tự động thức dậy trong MV3
+// Lưu ý: periodInMinutes tối thiểu là 1 trong Chrome MV3
+function setupKeepAliveAlarm() {
+  try {
+    chrome.alarms.create('hosiflow_keepalive', { periodInMinutes: 1 });
+  } catch (err) {
+    console.warn('[HosiFlow Companion] Alarms setup notice:', err);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('hosiflow_keepalive', { periodInMinutes: 0.5 });
+  setupKeepAliveAlarm();
   syncWithStudio();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create('hosiflow_keepalive', { periodInMinutes: 0.5 });
+  setupKeepAliveAlarm();
   syncWithStudio();
 });
 
@@ -39,6 +49,54 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     // Bỏ qua lỗi truy vấn tab
   }
 });
+
+// Lắng nghe Message từ Content Script (muse-bridge.js)
+// Khi Content Script gửi chrome.runtime.sendMessage, MV3 Service Worker tự động thức dậy!
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'MUSEFLOW_JOB_COMPLETED') {
+    handleJobCompleted(message);
+    sendResponse({ received: true });
+    return false;
+  }
+  if (message?.type === 'MUSEFLOW_KEEPALIVE') {
+    sendResponse({ alive: true });
+    return false;
+  }
+  return false;
+});
+
+// Gửi kết quả hoàn thành về HosiFlow Studio Local API
+async function handleJobCompleted(data) {
+  const jobId = data.jobId || data.job_id;
+  if (!jobId) return;
+
+  if (processedJobIds.has(jobId)) {
+    console.log(`[HosiFlow Companion] Job ${jobId} đã được báo cáo trước đó, bỏ qua lặp.`);
+    return;
+  }
+  processedJobIds.add(jobId);
+  isProcessingJob = false;
+
+  console.log(`[HosiFlow Companion] Đang gửi kết quả Job ${jobId} về Studio:`, data.ok ? 'SUCCESS' : 'FAILED');
+
+  try {
+    await fetch(`${API_BASE}/jobs/result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: jobId,
+        node_id: data.nodeId || data.node_id,
+        ok: Boolean(data.ok),
+        url: data.url || null,
+        error: data.error || null,
+        end_frame: data.endFrame || data.end_frame || null,
+        script_text: data.script_text || data.script || null,
+      }),
+    });
+  } catch (err) {
+    console.error('[HosiFlow Companion] Lỗi gửi kết quả về Studio:', err);
+  }
+}
 
 // Khi click vào icon extension trên toolbar: mở hoặc chuyển sang tab Muse.ai
 chrome.action.onClicked.addListener(async () => {
@@ -150,7 +208,6 @@ async function safeSendMessage(tabId, payload) {
 
 // Xử lý Job do Desktop App giao
 async function pollAndExecuteJob(tabId) {
-  let keepAliveInterval = null;
   try {
     const res = await fetch(`${API_BASE}/jobs/next`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
     if (!res || !res.ok) return;
@@ -159,9 +216,6 @@ async function pollAndExecuteJob(tabId) {
     if (!job || !job.id) return;
 
     isProcessingJob = true;
-    keepAliveInterval = setInterval(() => {
-      chrome.runtime.getPlatformInfo?.(() => {});
-    }, 5000);
 
     let reply;
     if (job.media_type === 'script') {
@@ -173,17 +227,15 @@ async function pollAndExecuteJob(tabId) {
         timeoutSec: 180,
       });
 
-      await fetch(`${API_BASE}/jobs/result`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_id: job.id,
-          node_id: job.node_id,
-          ok: reply?.ok || false,
-          script_text: reply?.script || null,
-          error: reply?.error || null,
-        }),
-      }).catch(() => null);
+      if (reply) {
+        await handleJobCompleted({
+          jobId: job.id,
+          nodeId: job.node_id,
+          ok: reply.ok,
+          script_text: reply.script || null,
+          error: reply.error || null,
+        });
+      }
       return;
     }
 
@@ -200,23 +252,18 @@ async function pollAndExecuteJob(tabId) {
       timeoutSec: 600,
     });
 
-    await fetch(`${API_BASE}/jobs/result`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        job_id: job.id,
-        node_id: job.node_id,
-        ok: reply?.ok || false,
-        url: reply?.url || null,
-        error: reply?.error || null,
-        end_frame: reply?.endFrame || null,
-      }),
-    }).catch(() => null);
-  } catch {
-    // Không làm gián đoạn vòng lặp chính
-  } finally {
-    if (keepAliveInterval) clearInterval(keepAliveInterval);
-    isProcessingJob = false;
+    if (reply && (reply.url || reply.error || reply.ok === false)) {
+      await handleJobCompleted({
+        jobId: job.id,
+        nodeId: job.node_id,
+        ok: reply.ok,
+        url: reply.url || null,
+        error: reply.error || null,
+        endFrame: reply.endFrame || null,
+      });
+    }
+  } catch (err) {
+    console.error('[HosiFlow Companion] pollAndExecuteJob error:', err);
   }
 }
 

@@ -10,14 +10,58 @@
     if (message?.type === 'MUSEFLOW_GENERATE_SCRIPT') {
       const controller = new AbortController();
       activeGenerations.set(message.requestId || 'script', controller);
+      
+      const reportScriptResult = async (res) => {
+        try {
+          await chrome.runtime.sendMessage({
+            type: 'MUSEFLOW_JOB_COMPLETED',
+            jobId: message.requestId,
+            nodeId: message.nodeId || message.node_id,
+            ok: Boolean(res?.ok),
+            script_text: res?.script || null,
+            error: res?.error || null,
+          });
+        } catch {}
+      };
+
       generateScript(message, controller.signal)
-        .then(sendResponse, error => sendResponse({ ok: false, error: error.message || String(error) }))
+        .then(async (res) => {
+          await reportScriptResult(res);
+          sendResponse(res);
+        }, async (error) => {
+          const failRes = { ok: false, error: error.message || String(error) };
+          await reportScriptResult(failRes);
+          sendResponse(failRes);
+        })
         .finally(() => activeGenerations.delete(message.requestId || 'script'));
       return true;
     }
     if (message?.type === 'MUSEFLOW_GENERATE') {
-      const controller=new AbortController();activeGenerations.set(message.requestId,controller);
-      generate(message,controller.signal).then(async (res) => {
+      const controller = new AbortController();
+      activeGenerations.set(message.requestId, controller);
+
+      // Keepalive định kỳ đánh thức Background Service Worker
+      const keepAliveInterval = setInterval(() => {
+        try {
+          chrome.runtime.sendMessage({ type: 'MUSEFLOW_KEEPALIVE' }).catch(() => {});
+        } catch {}
+      }, 5000);
+
+      const reportResult = async (res) => {
+        // 1. Gửi qua Chrome Runtime Message (luôn đánh thức Service Worker)
+        try {
+          await chrome.runtime.sendMessage({
+            type: 'MUSEFLOW_JOB_COMPLETED',
+            jobId: message.requestId,
+            nodeId: message.nodeId || message.node_id,
+            ok: Boolean(res?.ok),
+            url: res?.url || null,
+            error: res?.error || null,
+            endFrame: res?.endFrame || null,
+          });
+        } catch {}
+
+        // 2. Dự phòng: Gửi trực tiếp Local API nếu trình duyệt cho phép
         try {
           await fetch('http://127.0.0.1:4826/api/jobs/result', {
             method: 'POST',
@@ -25,29 +69,28 @@
             body: JSON.stringify({
               job_id: message.requestId,
               node_id: message.nodeId || message.node_id,
-              ok: res?.ok || false,
+              ok: Boolean(res?.ok),
               url: res?.url || null,
               error: res?.error || null,
               end_frame: res?.endFrame || null,
             }),
           });
         } catch {}
-        sendResponse(res);
-      }, async (error) => {
-        try {
-          await fetch('http://127.0.0.1:4826/api/jobs/result', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              job_id: message.requestId,
-              node_id: message.nodeId || message.node_id,
-              ok: false,
-              error: error.message || String(error),
-            }),
-          });
-        } catch {}
-        sendResponse({ ok: false, code:error.code||'MUSE_ERROR', error: error.message || String(error) });
-      }).finally(()=>activeGenerations.delete(message.requestId));
+      };
+
+      generate(message, controller.signal)
+        .then(async (res) => {
+          await reportResult(res);
+          try { sendResponse(res); } catch {}
+        }, async (error) => {
+          const failRes = { ok: false, code: error.code || 'MUSE_ERROR', error: error.message || String(error) };
+          await reportResult(failRes);
+          try { sendResponse(failRes); } catch {}
+        })
+        .finally(() => {
+          clearInterval(keepAliveInterval);
+          activeGenerations.delete(message.requestId);
+        });
       return true;
     }
     if(message?.type==='MUSEFLOW_STOP_GENERATION'){
@@ -145,9 +188,11 @@
           (item) =>
             /video\//i.test(item.type) ||
             /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url) ||
-            /\.(?:mp4|webm|mov|m4v)$/i.test(item.download)
+            /\.(?:mp4|webm|mov|m4v)$/i.test(item.download) ||
+            /\/v\/|\/video\//i.test(item.url) ||
+            (item.download && /\.(?:mp4|webm|mov|m4v)/i.test(item.download))
         )?.url || '';
-      const videoUrl = videoLink || video?.currentSrc || video?.src || video?.querySelector('source')?.src || '';
+      const videoUrl = videoLink || video?.currentSrc || video?.src || video?.querySelector('source')?.src || video?.getAttribute('data-src') || video?.getAttribute('src') || '';
       const media = video || image;
       const src = videoUrl || media?.currentSrc || media?.src || '';
 
@@ -285,17 +330,19 @@
       if(wrongMedia){
         if (mediaType === 'video') {
           const animateBtn = [...document.querySelectorAll('button, [role="button"]')].filter(visible).find(b =>
-            /animate.*video|animate this|animate into/i.test(`${b.getAttribute('aria-label') || ''} ${b.innerText || ''}`)
+            /animate.*video|animate this|animate into|tạo video/i.test(`${b.getAttribute('aria-label') || ''} ${b.innerText || ''}`)
           );
           if (animateBtn && !animateBtn.disabled) {
+            console.log('[HosiFlow Bridge] Đang bấm nút Animate video...');
             animateBtn.click();
             wrongMediaSince = 0;
             await delay(1500, signal);
             continue;
           }
         }
-        if(!wrongMediaSince)wrongMediaSince=Date.now();
-        if(Date.now()-wrongMediaSince>=15000){
+        const stopBtn = Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
+        if(!stopBtn && !wrongMediaSince) wrongMediaSince=Date.now();
+        if(!stopBtn && wrongMediaSince && (Date.now()-wrongMediaSince>=30000)){
           const expected=mediaType==='image'?'image':'video',actual=mediaType==='image'?'video':'image';
           const error=new Error(`Muse returned a ${actual} for a Generate ${expected==='image'?'Image':'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);
           error.code='MEDIA_TYPE_MISMATCH';
@@ -328,10 +375,47 @@
           if (mediaType === 'video') {
             endFrame = media?.poster || best.el.querySelector('img')?.src || null;
           }
+          console.log('[HosiFlow Bridge] Đã phát hiện media khớp:', src);
           return { ok: true, url: src, endFrame };
         }
       }
+
       const stop=Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
+
+      // Khi Muse đã tạo xong (nút Stop biến mất): Quét trực tiếp để không bị lọt
+      if (!stop) {
+        if (mediaType === 'video') {
+          // 1. Quét toàn bộ thẻ video mới
+          const allVideos = [...document.querySelectorAll('video')];
+          for (const v of allVideos.reverse()) {
+            const vSrc = v.currentSrc || v.src || v.querySelector('source')?.src || v.getAttribute('src') || v.getAttribute('data-src');
+            if (vSrc && !baseline.has(vSrc)) {
+              console.log('[HosiFlow Bridge] Quét thấy thẻ video trực tiếp hoàn tất:', vSrc);
+              return { ok: true, url: vSrc, endFrame: v.poster || null };
+            }
+          }
+          // 2. Quét liên kết video mp4/webm/v
+          const vLinks = [...document.querySelectorAll('a[href*=".mp4"], a[href*=".webm"], a[href*="/v/"], [data-video-src], [data-download-url]')];
+          for (const a of vLinks.reverse()) {
+            const aSrc = a.getAttribute('data-video-src') || a.getAttribute('data-download-url') || a.href;
+            if (aSrc && !baseline.has(aSrc)) {
+              console.log('[HosiFlow Bridge] Quét thấy link video hoàn tất:', aSrc);
+              return { ok: true, url: aSrc, endFrame: null };
+            }
+          }
+        } else {
+          const bubbles = assistantMessageElements();
+          const latestBubble = bubbles[bubbles.length - 1];
+          if (latestBubble) {
+            const img = latestBubble.querySelector('img');
+            const imgSrc = img?.currentSrc || img?.src;
+            if (imgSrc && !baseline.has(imgSrc)) {
+              console.log('[HosiFlow Bridge] Quét thấy ảnh hoàn tất từ bubble cuối:', imgSrc);
+              return { ok: true, url: imgSrc, endFrame: null };
+            }
+          }
+        }
+      }
       const currentContext=readNewAssistantContext(priorBubbleTexts),refusal=isRefusalContext(currentContext);
       if(refusal){
         if(currentContext!==refusalContext){refusalContext=currentContext;refusalContextSince=Date.now();}
