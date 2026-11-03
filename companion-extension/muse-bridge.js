@@ -114,7 +114,7 @@
     return explicit.test(text)||inability.test(text)&&(sceneContext.test(text)||offerAlternative.test(text));
   }
 
-  async function generate({prompt,timeoutSec=600,mediaType='image',referenceImage='',referenceImages=[],size='1:1',requestId},signal) {
+  async function generate({prompt,timeoutSec=600,mediaType='image',referenceImage='',referenceImages=[],size='16:9',requestId},signal) {
     const throwIfAborted=()=>{if(signal?.aborted)throw new DOMException('Generation stopped by user.','AbortError');};
     throwIfAborted();
     if(!String(prompt||'').trim())throw new Error('Prompt is empty.');
@@ -130,7 +130,17 @@
     composer.scrollIntoView({block:'center'});composer.focus();
     const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;
     if(!setter)throw new Error('Muse message box is unsupported.');
-    setter.call(composer,String(prompt));
+    let targetPrompt = String(prompt || '').trim();
+    const targetSize = size || '16:9';
+    if (!/--(?:ar|aspect)\s+\d+:\d+/i.test(targetPrompt)) {
+      const ratioKeyword = targetSize === '16:9' ? '--ar 16:9, widescreen 16:9 horizontal'
+        : targetSize === '9:16' ? '--ar 9:16, vertical 9:16 portrait'
+        : targetSize === '1:1' ? '--ar 1:1, square 1:1'
+        : targetSize === '4:3' ? '--ar 4:3, standard 4:3'
+        : `--ar ${targetSize}`;
+      targetPrompt = `${targetPrompt} ${ratioKeyword}`;
+    }
+    setter.call(composer, targetPrompt);
     composer.dispatchEvent(new Event('input',{bubbles:true}));
     composer.dispatchEvent(new Event('change',{bubbles:true}));
     let sendButton=null;
@@ -173,7 +183,7 @@
       const wrongMedia=fresh.find(a=>mediaType==='image'?a.isVideo:!a.isVideo);
       if(wrongMedia){if(!wrongMediaSince)wrongMediaSince=Date.now();if(Date.now()-wrongMediaSince>=1800){const expected=mediaType==='image'?'image':'video',actual=mediaType==='image'?'video':'image';const error=new Error(`Muse returned a ${actual} for a Generate ${expected==='image'?'Image':'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);error.code='MEDIA_TYPE_MISMATCH';throw error;}}
       else wrongMediaSince=0;
-      const [ratioW,ratioH]=String(size||'1:1').split(':').map(Number),expectedRatio=ratioW>0&&ratioH>0?ratioW/ratioH:1;
+      const [ratioW,ratioH]=String(size||'16:9').split(':').map(Number),expectedRatio=ratioW>0&&ratioH>0?ratioW/ratioH:1;
       const measured=matching.filter(a=>a.width>0&&a.height>0).sort((a,b)=>{
         const scoreA=Math.abs(Math.log((a.width/a.height)/expectedRatio)),scoreB=Math.abs(Math.log((b.width/b.height)/expectedRatio));
         if(Math.abs(scoreA-scoreB)>.015)return scoreA-scoreB;
