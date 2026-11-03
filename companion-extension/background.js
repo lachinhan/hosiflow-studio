@@ -150,6 +150,7 @@ async function safeSendMessage(tabId, payload) {
 
 // Xử lý Job do Desktop App giao
 async function pollAndExecuteJob(tabId) {
+  let keepAliveInterval = null;
   try {
     const res = await fetch(`${API_BASE}/jobs/next`, { signal: AbortSignal.timeout(2000) }).catch(() => null);
     if (!res || !res.ok) return;
@@ -158,12 +159,16 @@ async function pollAndExecuteJob(tabId) {
     if (!job || !job.id) return;
 
     isProcessingJob = true;
+    keepAliveInterval = setInterval(() => {
+      chrome.runtime.getPlatformInfo?.(() => {});
+    }, 5000);
 
     let reply;
     if (job.media_type === 'script') {
       reply = await safeSendMessage(tabId, {
         type: 'MUSEFLOW_GENERATE_SCRIPT',
         requestId: job.id,
+        nodeId: job.node_id,
         prompt: job.prompt,
         timeoutSec: 180,
       });
@@ -185,6 +190,7 @@ async function pollAndExecuteJob(tabId) {
     reply = await safeSendMessage(tabId, {
       type: 'MUSEFLOW_GENERATE',
       requestId: job.id,
+      nodeId: job.node_id,
       prompt: job.prompt,
       negativePrompt: job.negative_prompt || '',
       size: job.size || '16:9',
@@ -209,6 +215,7 @@ async function pollAndExecuteJob(tabId) {
   } catch {
     // Không làm gián đoạn vòng lặp chính
   } finally {
+    if (keepAliveInterval) clearInterval(keepAliveInterval);
     isProcessingJob = false;
   }
 }

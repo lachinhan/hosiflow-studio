@@ -17,7 +17,37 @@
     }
     if (message?.type === 'MUSEFLOW_GENERATE') {
       const controller=new AbortController();activeGenerations.set(message.requestId,controller);
-      generate(message,controller.signal).then(sendResponse, error => sendResponse({ ok: false, code:error.code||'MUSE_ERROR', error: error.message || String(error) })).finally(()=>activeGenerations.delete(message.requestId));
+      generate(message,controller.signal).then(async (res) => {
+        try {
+          await fetch('http://127.0.0.1:4826/api/jobs/result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              job_id: message.requestId,
+              node_id: message.nodeId || message.node_id,
+              ok: res?.ok || false,
+              url: res?.url || null,
+              error: res?.error || null,
+              end_frame: res?.endFrame || null,
+            }),
+          });
+        } catch {}
+        sendResponse(res);
+      }, async (error) => {
+        try {
+          await fetch('http://127.0.0.1:4826/api/jobs/result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              job_id: message.requestId,
+              node_id: message.nodeId || message.node_id,
+              ok: false,
+              error: error.message || String(error),
+            }),
+          });
+        } catch {}
+        sendResponse({ ok: false, code:error.code||'MUSE_ERROR', error: error.message || String(error) });
+      }).finally(()=>activeGenerations.delete(message.requestId));
       return true;
     }
     if(message?.type==='MUSEFLOW_STOP_GENERATION'){
@@ -38,7 +68,7 @@
     const cancel=()=>{clearTimeout(timer);signal?.removeEventListener('abort',cancel);reject(new DOMException('Generation stopped by user.','AbortError'));};
     signal?.addEventListener('abort',cancel,{once:true});
   });
-  const attachmentSelector='[data-testid^="hatch-chat-attachment-presentation-"]';
+  const attachmentSelector='[data-testid^="hatch-chat-attachment-presentation-"], [data-testid*="video" i], video, div:has(> video)';
   const activeGenerations=new Map();
 
   function clickMuseStop(){
@@ -72,14 +102,78 @@
   }
 
   function attachments() {
-    return [...document.querySelectorAll(attachmentSelector)].filter(el=>!el.closest('form,[class*="chat-user-bubble"],[class*="group/msg"]')&&!el.closest('[data-testid="hatch-composer-placeholder-overlay"]')).map(el=>{
-      const tid=el.getAttribute('data-testid')||'',video=el.querySelector('video'),image=el.querySelector('img');
-      const urls=[...el.querySelectorAll('a[href],video source[src],source[src],[data-video-src],[data-download-url]')].map(item=>({url:item.href||item.src||item.getAttribute('data-video-src')||item.getAttribute('data-download-url')||'',download:item.getAttribute('download')||'',type:item.getAttribute('type')||''})).filter(item=>item.url);
-      const videoLink=urls.find(item=>/video\//i.test(item.type)||/\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url)||/\.(?:mp4|webm|mov|m4v)$/i.test(item.download))?.url||'';
-      const videoUrl=video?.currentSrc||video?.src||videoLink||'';
-      const media=video||image;
-      return {el,tid,src:videoUrl||media?.currentSrc||media?.src||'',videoUrl,isVideo:Boolean(videoUrl)||video instanceof HTMLVideoElement||/video/i.test(tid),width:video?.videoWidth||image?.naturalWidth||0,height:video?.videoHeight||image?.naturalHeight||0};
-    }).filter(a=>a.src);
+    const elements = [...document.querySelectorAll(attachmentSelector)];
+
+    document.querySelectorAll('video, a[href*=".mp4"], a[href*=".webm"], [data-video-src], [data-download-url]').forEach((v) => {
+      const parent = v.closest('[data-testid^="hatch-chat-attachment-presentation-"]') || v.parentElement || v;
+      if (!elements.includes(parent)) {
+        elements.push(parent);
+      }
+    });
+
+    const list = [];
+    const seen = new Set();
+
+    for (const el of elements) {
+      if (
+        el.closest('form, [class*="chat-user-bubble"], [data-message-author-role="user"]') ||
+        el.closest('[data-testid="hatch-composer-placeholder-overlay"]')
+      ) {
+        continue;
+      }
+
+      const tid = el.getAttribute('data-testid') || '';
+      const video = el.matches('video') ? el : el.querySelector('video');
+      const image = el.matches('img') ? el : el.querySelector('img');
+
+      const urls = [
+        ...el.querySelectorAll('a[href], video source[src], source[src], [data-video-src], [data-download-url]'),
+      ]
+        .map((item) => ({
+          url: item.href || item.src || item.getAttribute('data-video-src') || item.getAttribute('data-download-url') || '',
+          download: item.getAttribute('download') || '',
+          type: item.getAttribute('type') || '',
+        }))
+        .filter((item) => item.url);
+
+      if (el.matches('a[href]')) {
+        urls.push({ url: el.href, download: el.getAttribute('download') || '', type: el.getAttribute('type') || '' });
+      }
+
+      const videoLink =
+        urls.find(
+          (item) =>
+            /video\//i.test(item.type) ||
+            /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(item.url) ||
+            /\.(?:mp4|webm|mov|m4v)$/i.test(item.download)
+        )?.url || '';
+      const videoUrl = videoLink || video?.currentSrc || video?.src || video?.querySelector('source')?.src || '';
+      const media = video || image;
+      const src = videoUrl || media?.currentSrc || media?.src || '';
+
+      if (src && !seen.has(src)) {
+        seen.add(src);
+        const isVideo =
+          Boolean(videoUrl) ||
+          video instanceof HTMLVideoElement ||
+          /video/i.test(tid) ||
+          /\.(?:mp4|webm|mov|m4v)/i.test(src);
+        const w = video?.videoWidth || image?.naturalWidth || video?.clientWidth || el.clientWidth || 0;
+        const h = video?.videoHeight || image?.naturalHeight || video?.clientHeight || el.clientHeight || 0;
+
+        list.push({
+          el,
+          tid,
+          src,
+          videoUrl,
+          isVideo,
+          width: w,
+          height: h,
+        });
+      }
+    }
+
+    return list;
   }
 
   function waitForAttachmentChange(timeoutMs,signal){
@@ -210,29 +304,32 @@
       }
       else wrongMediaSince=0;
       const [ratioW,ratioH]=String(size||'16:9').split(':').map(Number),expectedRatio=ratioW>0&&ratioH>0?ratioW/ratioH:1;
-      const measured=matching.filter(a=>a.width>0&&a.height>0).sort((a,b)=>{
-        const scoreA=Math.abs(Math.log((a.width/a.height)/expectedRatio)),scoreB=Math.abs(Math.log((b.width/b.height)/expectedRatio));
-        if(Math.abs(scoreA-scoreB)>.015)return scoreA-scoreB;
-        return a.el.compareDocumentPosition(b.el)&Node.DOCUMENT_POSITION_FOLLOWING?1:-1;
+      const candidates = matching.length > 0 ? matching : fresh.filter((a) => (mediaType === 'video' ? a.isVideo : true));
+      const measured = candidates.sort((a,b)=>{
+        const wA = a.width || 16, hA = a.height || 9;
+        const wB = b.width || 16, hB = b.height || 9;
+        const scoreA = Math.abs(Math.log((wA / hA) / expectedRatio));
+        const scoreB = Math.abs(Math.log((wB / hB) / expectedRatio));
+        if (Math.abs(scoreA - scoreB) > 0.05) return scoreA - scoreB;
+        return a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1;
       });
-      const best=measured[0],bestRatioError=best?Math.abs(Math.log((best.width/best.height)/expectedRatio)):Infinity;
-      if(best&&bestRatioError<=.09)firstWrongRatioAt=0;
-      else if(best&&!firstWrongRatioAt)firstWrongRatioAt=Date.now();
-      const result=best&&(bestRatioError<=.09||Date.now()-firstWrongRatioAt>=3500)?best:null;
-      if(result){
-        const media=mediaType==='video'?(result.el.querySelector('video')||null):(result.el.querySelector('img')||null);
-        const src=mediaType==='video'?(result.videoUrl||media?.currentSrc||media?.src||''):(media?.currentSrc||media?.src||'');
-        // Muse may first render a poster and attach the playable/download URL after
-        // hydration. Keep waiting for that URL instead of rejecting a completed clip.
-        if(!src){firstWrongRatioAt=firstWrongRatioAt||Date.now();await waitForAttachmentChange(Math.min(500,deadline-Date.now()),signal);continue;}
-        if(mediaType==='video'&&!src.startsWith('blob:')&&!src.startsWith('data:'))return {ok:true,url:src};
-        if(src.startsWith('data:'))return {ok:true,url:src};
-        try{
-          const response=await fetch(src,{credentials:'include'});
-          if(!response.ok)throw new Error(`${mediaType} download returned HTTP ${response.status}.`);
-          const blob=await response.blob();
-          return {ok:true,url:await blobToDataUrl(blob)};
-        }catch(error){return {ok:true,url:src,error:`New ${mediaType} detected but could not be copied locally: ${error.message}`};}
+
+      const best = measured[0];
+      if (best) {
+        const media = mediaType === 'video'
+          ? (best.el.querySelector('video') || (best.el.matches('video') ? best.el : null))
+          : (best.el.querySelector('img') || (best.el.matches('img') ? best.el : null));
+        let src = mediaType === 'video'
+          ? (best.videoUrl || media?.currentSrc || media?.src || best.src || '')
+          : (media?.currentSrc || media?.src || best.src || '');
+
+        if (src) {
+          let endFrame = null;
+          if (mediaType === 'video') {
+            endFrame = media?.poster || best.el.querySelector('img')?.src || null;
+          }
+          return { ok: true, url: src, endFrame };
+        }
       }
       const stop=Boolean(document.querySelector('[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'));
       const currentContext=readNewAssistantContext(priorBubbleTexts),refusal=isRefusalContext(currentContext);
