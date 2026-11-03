@@ -2,78 +2,7 @@
   if (window.__museFlowBridgeInstalled) return;
   window.__museFlowBridgeInstalled = true;
 
-  // ========================================================
-  // INTERCEPT FETCH + XHR ĐỂ BẮT VIDEO URL TỪ API MUSE
-  // Đây là cách đáng tin cậy nhất: bắt response trước khi Muse render
-  // ========================================================
-  const _interceptedVideoUrls = []; // Danh sách URL video bắt được từ network
-
-  (function patchNetwork() {
-    // Patch window.fetch
-    const _origFetch = window.fetch;
-    window.fetch = async function(...args) {
-      const response = await _origFetch.apply(this, args);
-      try {
-        const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
-        // Chỉ intercept các API call của Muse (không intercept external CDN)
-        if (/muse\.ai|api\//i.test(url) && !/\.(png|jpg|jpeg|webp|gif|svg|css|js|woff)/i.test(url)) {
-          const clone = response.clone();
-          clone.json().then(data => {
-            const jsonStr = JSON.stringify(data);
-            // Tìm URL .mp4/.webm trong JSON response
-            const matches = jsonStr.match(/https?:\/\/[^"'\\]+\.(?:mp4|webm|mov|m4v)[^"'\\]*/gi) || [];
-            matches.forEach(u => {
-              if (!_interceptedVideoUrls.includes(u)) {
-                console.log('[HosiFlow Bridge] 🎯 Bắt được video URL từ Muse API fetch:', u);
-                _interceptedVideoUrls.push(u);
-              }
-            });
-          }).catch(() => {});
-        }
-        // Cũng kiểm tra URL trực tiếp là .mp4
-        if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(typeof args[0] === 'string' ? args[0] : '')) {
-          const directUrl = typeof args[0] === 'string' ? args[0] : '';
-          if (directUrl && !_interceptedVideoUrls.includes(directUrl)) {
-            console.log('[HosiFlow Bridge] 🎯 Bắt được video URL trực tiếp từ fetch:', directUrl);
-            _interceptedVideoUrls.push(directUrl);
-          }
-        }
-      } catch {}
-      return response;
-    };
-
-    // Patch XMLHttpRequest
-    const _origOpen = XMLHttpRequest.prototype.open;
-    const _origSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-      this._hosiflowUrl = url || '';
-      return _origOpen.apply(this, [method, url, ...rest]);
-    };
-    XMLHttpRequest.prototype.send = function(...args) {
-      this.addEventListener('load', function() {
-        try {
-          const url = this._hosiflowUrl || '';
-          if (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)) {
-            if (!_interceptedVideoUrls.includes(url)) {
-              console.log('[HosiFlow Bridge] 🎯 Bắt được video URL từ XHR:', url);
-              _interceptedVideoUrls.push(url);
-            }
-          }
-          if (/muse\.ai|api\//i.test(url) && this.responseText) {
-            const matches = this.responseText.match(/https?:\/\/[^"'\\]+\.(?:mp4|webm|mov|m4v)[^"'\\]*/gi) || [];
-            matches.forEach(u => {
-              if (!_interceptedVideoUrls.includes(u)) {
-                console.log('[HosiFlow Bridge] 🎯 Bắt được video URL từ XHR response:', u);
-                _interceptedVideoUrls.push(u);
-              }
-            });
-          }
-        } catch {}
-      });
-      return _origSend.apply(this, args);
-    };
-  })();
-
+  // Lắng nghe Message từ Chrome Extension Background Service Worker
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'MUSEFLOW_CHECK_SESSION') {
       checkSession().then(sendResponse);
@@ -103,10 +32,14 @@
     if (message?.type === 'MUSEFLOW_GENERATE') {
       const controller = new AbortController();
       activeGenerations.set(message.requestId, controller);
+
+      // Keepalive định kỳ đánh thức Background Service Worker
       const keepAliveInterval = setInterval(() => {
         try { chrome.runtime.sendMessage({ type: 'MUSEFLOW_KEEPALIVE' }).catch(() => {}); } catch {}
       }, 5000);
+
       const reportResult = async (res) => {
+        // Kênh 1: Gửi qua chrome.runtime.sendMessage
         try {
           await chrome.runtime.sendMessage({
             type: 'MUSEFLOW_JOB_COMPLETED',
@@ -118,6 +51,8 @@
             endFrame: res?.endFrame || null,
           });
         } catch {}
+
+        // Kênh 2: Gửi trực tiếp về HTTP server của Studio
         try {
           await fetch('http://127.0.0.1:4826/api/jobs/result', {
             method: 'POST',
@@ -133,6 +68,7 @@
           });
         } catch {}
       };
+
       generate(message, controller.signal)
         .then(async (res) => { await reportResult(res); try { sendResponse(res); } catch {} },
               async (error) => { const f = { ok: false, code: error.code || 'MUSE_ERROR', error: error.message || String(error) }; await reportResult(f); try { sendResponse(f); } catch {}; })
@@ -145,7 +81,7 @@
     }
   });
 
-  // ========== HELPERS ==========
+  // ========== CÁC HÀM TIỆN ÍCH CƠ BẢN ==========
   function findComposer() {
     const candidates = [...document.querySelectorAll('textarea')].filter(el => visible(el) && !el.disabled);
     return candidates.find(el => /message|消息/i.test(el.getAttribute('placeholder') || '')) || candidates[0] || null;
@@ -186,157 +122,6 @@
     if (!findComposer()) throw new Error('Muse chat is not ready. Open the Muse chat page and wait for the message box to load.');
   }
 
-  // ========== TÌM VIDEO URL - ĐA CHIẾN LƯỢC ==========
-
-  // Chiến lược 1: URL đã bắt được từ fetch/XHR intercept (đáng tin cậy nhất)
-  function getInterceptedVideoUrl(capturedBefore) {
-    // Chỉ lấy URL được bắt SAU khi bắt đầu job này
-    return _interceptedVideoUrls.find(u => !capturedBefore.has(u)) || '';
-  }
-
-  // Chiến lược 2: PerformanceResourceTiming API
-  function getVideoUrlFromPerformance(startTime) {
-    try {
-      return performance.getEntriesByType('resource')
-        .filter(e => e.startTime > startTime && /\.(mp4|webm|mov|m4v)(\?|$|#)/i.test(e.name))
-        .sort((a, b) => b.startTime - a.startTime)[0]?.name || '';
-    } catch { return ''; }
-  }
-
-  // Chiến lược 3: Quét DOM tìm URL video trong tất cả attributes
-  function getVideoUrlFromDOM(root) {
-    try {
-      const all = root ? [root, ...root.querySelectorAll('*')] : [...document.querySelectorAll('*')];
-      for (const el of all) {
-        // Kiểm tra <video src>, <source src>
-        if (el.tagName === 'VIDEO' || el.tagName === 'SOURCE') {
-          const s = el.currentSrc || el.src || '';
-          if (s && /\.(mp4|webm|mov|m4v)/i.test(s)) return s;
-        }
-        // Kiểm tra <a href>
-        if (el.tagName === 'A' && /\.(mp4|webm|mov|m4v)/i.test(el.href || '')) return el.href;
-        // Quét tất cả attributes
-        for (const attr of [...(el.attributes || [])]) {
-          if (/https?:\/\//i.test(attr.value) && /\.(mp4|webm|mov|m4v)/i.test(attr.value)) {
-            return attr.value.match(/https?:\/\/[^\s"'<>]*/)?.[0] || '';
-          }
-        }
-      }
-    } catch {}
-    return '';
-  }
-
-  // Chiến lược 4: Quét React fiber state để tìm video URL
-  function getVideoUrlFromReactFiber(containerEl) {
-    try {
-      function searchFiber(fiber, depth) {
-        if (!fiber || depth > 20) return '';
-        const state = fiber.memoizedState;
-        if (state) {
-          const stateStr = JSON.stringify(state);
-          const m = stateStr.match(/https?:\/\/[^"']+\.(?:mp4|webm|mov|m4v)[^"']*/i);
-          if (m) return m[0];
-        }
-        const props = fiber.memoizedProps;
-        if (props) {
-          const propsStr = JSON.stringify(props);
-          const m = propsStr.match(/https?:\/\/[^"']+\.(?:mp4|webm|mov|m4v)[^"']*/i);
-          if (m) return m[0];
-        }
-        return searchFiber(fiber.child, depth + 1) || searchFiber(fiber.sibling, depth + 1);
-      }
-      // Tìm React fiber key trên DOM element
-      const el = containerEl || document.body;
-      const fiberKey = Object.keys(el).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
-      if (fiberKey) {
-        return searchFiber(el[fiberKey], 0) || '';
-      }
-    } catch {}
-    return '';
-  }
-
-  // Chiến lược 5: Click play button để trigger lazy load, rồi đợi <video src>
-  async function clickPlayAndWaitForVideoSrc(container, signal) {
-    try {
-      const playBtn = container.querySelector(
-        '[role="button"], button, [aria-label*="play" i], [data-testid*="play" i], [class*="play" i]'
-      ) || container;
-      playBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      playBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-      playBtn.click();
-      // Đợi <video> có src sau khi click
-      const end = Date.now() + 5000;
-      while (Date.now() < end) {
-        if (signal?.aborted) break;
-        const videos = [...document.querySelectorAll('video')];
-        for (const v of videos) {
-          const s = v.currentSrc || v.src || '';
-          if (s && /\.(mp4|webm|mov|m4v)/i.test(s)) return s;
-        }
-        await delay(200, signal);
-      }
-    } catch {}
-    return '';
-  }
-
-  // ========== HÀM TỔNG HỢP: DETECT MUSE VIDEO COMPLETION ==========
-  function isMuseStillGenerating() {
-    return Boolean([...document.querySelectorAll(
-      '[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'
-    )].find(visible));
-  }
-
-  function hasNewVideoAttachment(baselineEls) {
-    const allVideoContainers = [
-      ...document.querySelectorAll(
-        '[data-testid^="hatch-chat-attachment-presentation-video"], ' +
-        '[data-testid*="video" i], ' +
-        'video'
-      )
-    ].filter(el =>
-      !el.closest('form, [class*="chat-user-bubble"], [data-message-author-role="user"]') &&
-      !el.closest('[data-testid="hatch-composer-placeholder-overlay"]')
-    );
-    return allVideoContainers.filter(el => !baselineEls.has(el));
-  }
-
-  // ========== ATTACHMENTS (CHỈ DÙNG CHO ẢNH) ==========
-  function imageAttachments(baseline) {
-    const elements = [...document.querySelectorAll(
-      '[data-testid^="hatch-chat-attachment-presentation-image"]'
-    )];
-    const list = [];
-    const seen = new Set();
-    for (const el of elements) {
-      if (el.closest('form, [class*="chat-user-bubble"], [data-message-author-role="user"]') ||
-          el.closest('[data-testid="hatch-composer-placeholder-overlay"]')) continue;
-      const tid = el.getAttribute('data-testid') || '';
-      if (/file|code|script|document|text|json/i.test(tid)) continue;
-      const image = el.querySelector('img') || (el.matches('img') ? el : null);
-      if (!image) continue;
-      const imgSrc = image.currentSrc || image.src || '';
-      if (!imgSrc) continue;
-      if (/icon|badge|avatar|document|file|\.svg/i.test(imgSrc)) continue;
-      if (image.naturalWidth > 0 && (image.naturalWidth < 180 || image.naturalHeight < 180)) continue;
-      if (baseline && baseline.has(imgSrc)) continue;
-      if (seen.has(imgSrc)) continue;
-      seen.add(imgSrc);
-      list.push({ el, src: imgSrc, width: image.naturalWidth, height: image.naturalHeight });
-    }
-    return list;
-  }
-
-  function waitForDOMChange(timeoutMs, signal) {
-    return new Promise(resolve => {
-      let timer;
-      const obs = new MutationObserver(() => finish());
-      const finish = () => { obs.disconnect(); clearTimeout(timer); signal?.removeEventListener('abort', finish); resolve(); };
-      obs.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
-      timer = setTimeout(finish, timeoutMs);
-      signal?.addEventListener('abort', finish, { once: true });
-    });
-  }
-
   function assistantMessageElements() {
     return [...document.querySelectorAll(
       'div[class*="hatch-chat-groupable-bubble"],[data-message-author-role="assistant"],' +
@@ -372,6 +157,7 @@
     el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
     el.click();
   }
+
   function findAnimateButton() {
     return [...document.querySelectorAll('button, [role="button"], div, span, a')].filter(visible).find(el => {
       if (clickedAnimateButtons.has(el)) return false;
@@ -410,7 +196,211 @@
     }
   }
 
-  // ========== MAIN GENERATE FUNCTION ==========
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Media conversion failed.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // ========== KIỂM TRA URL VIDEO HỢP LỆ ==========
+  function isValidVideoUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    url = url.trim();
+    if (url.length < 8) return false;
+    // Loại trừ ảnh, icon, font, css, js, json
+    if (/\.(png|jpg|jpeg|webp|gif|svg|css|js|woff2?|json|ico)(\?|$)/i.test(url)) return false;
+    // Loại trừ trang web Muse chat
+    if (/^https?:\/\/[^\/]+\/?$/i.test(url)) return false;
+    if (/\/chat(?:\/|$)/i.test(url)) return false;
+    // Chấp nhận đuôi file video trực tiếp
+    if (/\.(mp4|webm|mov|m4v)(\?|$|#)/i.test(url)) return true;
+    // Chấp nhận blob URL
+    if (url.startsWith('blob:')) return true;
+    // Chấp nhận data:video
+    if (url.startsWith('data:video/')) return true;
+    // Chấp nhận Muse CDN media stream
+    if (/muse\.ai.*(?:\/v\/|\/video|\/stream|\/media|\/play)/i.test(url)) return true;
+    return false;
+  }
+
+  // Chuyển blob thành data URL (base64) để app desktop có thể phát không bị lỗi cross-origin
+  async function resolvePlayableVideoUrl(url) {
+    if (!url) return '';
+    if (url.startsWith('data:video/')) return url;
+    if (url.startsWith('blob:')) {
+      try {
+        console.log('[HosiFlow Bridge] Đang chuyển blob URL thành Data URL...');
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return await blobToDataUrl(blob);
+      } catch (e) {
+        console.warn('[HosiFlow Bridge] Không thể chuyển đổi blob:', e);
+        return url;
+      }
+    }
+    return url;
+  }
+
+  // ========== TRÍCH XUẤT VIDEO URL TỪ MUSE BUBBLE ==========
+  async function extractVideoResult(newBubbles, startTime, signal) {
+    const latestBubble = newBubbles[newBubbles.length - 1] || assistantMessageElements().slice(-1)[0];
+    if (!latestBubble) return null;
+
+    const container = latestBubble.closest('div[class*="groupable"]') || latestBubble.parentElement || latestBubble;
+
+    // Lấy thumbnail ảnh làm endFrame
+    let endFrame = null;
+    const posterImg = container.querySelector('img') || document.querySelector('[data-testid^="hatch-chat-attachment"] img');
+    if (posterImg) {
+      endFrame = await imageToDataUrl(posterImg).catch(() => null);
+    }
+
+    // CHIẾN LƯỢC 1: Quét thẻ <video> đã render sẵn
+    for (const v of document.querySelectorAll('video')) {
+      const s = v.currentSrc || v.src || v.querySelector('source')?.src || '';
+      if (s && isValidVideoUrl(s)) {
+        const playable = await resolvePlayableVideoUrl(s);
+        return { url: playable, endFrame: endFrame || v.poster || null };
+      }
+    }
+
+    // CHIẾN LƯỢC 2: Quét tất cả thẻ <a href> trong container
+    for (const a of container.querySelectorAll('a[href]')) {
+      const href = a.href || '';
+      if (isValidVideoUrl(href) || (a.hasAttribute('download') && href.startsWith('http') && !/\/v\/\d+$/i.test(href))) {
+        return { url: href, endFrame };
+      }
+    }
+
+    // CHIẾN LƯỢC 3: Quét mọi attribute trong container
+    for (const el of container.querySelectorAll('*')) {
+      for (const attr of el.attributes) {
+        const val = attr.value || '';
+        const match = val.match(/https?:\/\/[^\s"'<>]+\.(?:mp4|webm|mov|m4v)[^\s"'<>]*/i);
+        if (match && isValidVideoUrl(match[0])) {
+          return { url: match[0], endFrame };
+        }
+      }
+    }
+
+    // CHIẾN LƯỢC 4: CLICK PLAY TRÊN CARD ĐỂ TRIGGER MUSE VIDEO PLAYER
+    const playBtn = container.querySelector(
+      'button[aria-label*="play" i], [role="button"][aria-label*="play" i], ' +
+      'button:has(svg), [role="button"]:has(svg), ' +
+      '[class*="play" i]'
+    );
+    const clickTarget = playBtn || posterImg || container;
+    if (clickTarget) {
+      console.log('[HosiFlow Bridge] Đang click play/thumbnail để kích hoạt Muse video player...', clickTarget);
+      try {
+        clickTarget.scrollIntoView({ block: 'nearest' });
+        clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+        clickTarget.click();
+      } catch {}
+    }
+
+    // Đợi tối đa 5 giây sau click để video src hoặc network request xuất hiện
+    const checkEnd = Date.now() + 5000;
+    while (Date.now() < checkEnd) {
+      if (signal?.aborted) break;
+
+      // Check thẻ <video>
+      for (const v of document.querySelectorAll('video')) {
+        const s = v.currentSrc || v.src || v.querySelector('source')?.src || '';
+        if (s && isValidVideoUrl(s)) {
+          const playable = await resolvePlayableVideoUrl(s);
+          return { url: playable, endFrame: endFrame || v.poster || null };
+        }
+      }
+
+      // Check PerformanceResourceTiming (network request .mp4/.webm sau click)
+      try {
+        const entries = performance.getEntriesByType('resource')
+          .filter(e => e.startTime > (startTime - 5000))
+          .filter(e => /\.(mp4|webm|mov|m4v)(\?|$|#)/i.test(e.name) || /video\//i.test(e.initiatorType))
+          .sort((a, b) => b.startTime - a.startTime);
+        if (entries.length > 0 && isValidVideoUrl(entries[0].name)) {
+          return { url: entries[0].name, endFrame };
+        }
+      } catch {}
+
+      // Check thẻ <a>
+      for (const a of container.querySelectorAll('a[href]')) {
+        const href = a.href || '';
+        if (isValidVideoUrl(href)) return { url: href, endFrame };
+      }
+
+      await delay(300, signal);
+    }
+
+    // CHIẾN LƯỢC 5: Thử click nút Export/Download [↑]
+    const exportBtn = container.querySelector(
+      'button[aria-label*="download" i], button[aria-label*="export" i], button[aria-label*="share" i], ' +
+      'button[title*="download" i], button[title*="export" i], a[download]'
+    );
+    if (exportBtn) {
+      if (exportBtn.tagName === 'A' && exportBtn.href) {
+        return { url: exportBtn.href, endFrame };
+      }
+      try {
+        exportBtn.click();
+        await delay(400, signal);
+        const menuItems = [...document.querySelectorAll('[role="menuitem"], [role="menu"] a, a[download]')];
+        for (const item of menuItems) {
+          if (item.href && isValidVideoUrl(item.href)) {
+            return { url: item.href, endFrame };
+          }
+        }
+      } catch {}
+    }
+
+    // CHIẾN LƯỢC 6: Fallback PerformanceResourceTiming tìm file media Muse gần nhất
+    try {
+      const museMedia = performance.getEntriesByType('resource')
+        .filter(e => e.startTime > (startTime - 10000))
+        .filter(e => /muse\.ai/i.test(e.name) && !/\.(png|jpg|jpeg|webp|gif|svg|css|js|woff|json)(\?|$)/i.test(e.name))
+        .sort((a, b) => b.startTime - a.startTime);
+      for (const entry of museMedia) {
+        if (isValidVideoUrl(entry.name)) {
+          return { url: entry.name, endFrame };
+        }
+      }
+    } catch {}
+
+    return null;
+  }
+
+  // ========== XỬ LÝ ẢNH (GENERATE IMAGE) ==========
+  function imageAttachments(baseline) {
+    const elements = [...document.querySelectorAll(
+      '[data-testid^="hatch-chat-attachment-presentation-image"]'
+    )];
+    const list = [];
+    const seen = new Set();
+    for (const el of elements) {
+      if (el.closest('form, [class*="chat-user-bubble"], [data-message-author-role="user"]') ||
+          el.closest('[data-testid="hatch-composer-placeholder-overlay"]')) continue;
+      const tid = el.getAttribute('data-testid') || '';
+      if (/file|code|script|document|text|json/i.test(tid)) continue;
+      const image = el.querySelector('img') || (el.matches('img') ? el : null);
+      if (!image) continue;
+      const imgSrc = image.currentSrc || image.src || '';
+      if (!imgSrc) continue;
+      if (/icon|badge|avatar|document|file|\.svg/i.test(imgSrc)) continue;
+      if (image.naturalWidth > 0 && (image.naturalWidth < 180 || image.naturalHeight < 180)) continue;
+      if (baseline && baseline.has(imgSrc)) continue;
+      if (seen.has(imgSrc)) continue;
+      seen.add(imgSrc);
+      list.push({ el, src: imgSrc, width: image.naturalWidth, height: image.naturalHeight });
+    }
+    return list;
+  }
+
+  // ========== HÀM GENERATE CHÍNH ==========
   async function generate({ prompt, timeoutSec = 600, mediaType = 'image', referenceImage = '', referenceImages = [], size = '16:9', requestId }, signal) {
     const throwIfAborted = () => { if (signal?.aborted) throw new DOMException('Generation stopped by user.', 'AbortError'); };
     throwIfAborted();
@@ -424,27 +414,17 @@
     if (referenceList.length) await attachReferences(referenceList, signal);
     throwIfAborted();
 
-    // Snapshot baseline trước khi submit
+    // Baseline ảnh trước khi gửi prompt
     const baselineImageSrcs = new Set(
       [...document.querySelectorAll('[data-testid^="hatch-chat-attachment-presentation-image"] img')]
         .map(img => img.currentSrc || img.src).filter(Boolean)
     );
-    const baselineVideoEls = new Set(
-      [...document.querySelectorAll(
-        '[data-testid^="hatch-chat-attachment-presentation-video"], [data-testid*="video" i], video'
-      )].filter(el =>
-        !el.closest('form, [class*="chat-user-bubble"], [data-message-author-role="user"]') &&
-        !el.closest('[data-testid="hatch-composer-placeholder-overlay"]')
-      )
-    );
-    // Snapshot intercepted URLs trước khi submit
-    const capturedBeforeSet = new Set(_interceptedVideoUrls);
-    // Snapshot PerformanceAPI start time
-    const perfStartTime = performance.now();
-
+    // Baseline bubbles trước khi gửi prompt
+    const priorBubbles = new Set(assistantMessageElements());
     const priorBubbleTexts = new Map(assistantMessageElements().map(el => [el, (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()]));
+    const startTime = performance.now();
 
-    // Build và submit prompt
+    // Định dạng prompt
     let targetPrompt = String(prompt || '').trim();
     if (mediaType === 'video') {
       if (referenceList.length > 0 && !/animate.*video/i.test(targetPrompt)) {
@@ -505,110 +485,74 @@
     if (!submitted || !accepted) throw new Error('Muse did not confirm the prompt submission.');
 
     const deadline = Date.now() + Math.min(900, Math.max(30, Number(timeoutSec) || 600)) * 1000;
-    let wrongMediaSince = 0, refusalContext = '', refusalContextSince = 0;
-    let lastDebugLog = 0, videoClickAttempts = 0;
+    let refusalContext = '', refusalContextSince = 0;
+    let videoGenStarted = false;
+    let lastLogTime = 0;
 
     while (Date.now() < deadline) {
       throwIfAborted();
 
-      // ===== XỬ LÝ VIDEO =====
+      // ==========================================
+      // NHÁNH 1: XỬ LÝ GENERATE VIDEO
+      // ==========================================
       if (mediaType === 'video') {
-        // Kiểm tra Animate button (Muse gợi ý tạo video từ ảnh)
+        // 1. Kiểm tra Animate button nếu Muse gợi ý
         const animateBtn = findAnimateButton();
         if (animateBtn) {
-          console.log('[HosiFlow Bridge] Bấm nút Animate...');
+          console.log('[HosiFlow Bridge] Phát hiện nút Animate, click 1 lần...', animateBtn);
           clickedAnimateButtons.add(animateBtn);
           try { animateBtn.setAttribute('data-hosiflow-clicked', 'true'); } catch {}
           clickElement(animateBtn);
+          videoGenStarted = true;
           await delay(2500, signal);
           continue;
         }
 
-        // === CHIẾN LƯỢC 1: Kiểm tra fetch/XHR intercept ngay cả khi đang gen ===
-        const interceptedUrl = getInterceptedVideoUrl(capturedBeforeSet);
-        if (interceptedUrl) {
-          console.log('[HosiFlow Bridge] ✅ VIDEO URL từ network intercept:', interceptedUrl);
-          return { ok: true, url: interceptedUrl, endFrame: null };
-        }
+        // 2. Kiểm tra trạng thái đang sinh (nút Stop)
+        const isStopVisible = Boolean(document.querySelector(
+          '[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'
+        ));
 
-        const stillGenerating = isMuseStillGenerating();
-
-        if (stillGenerating) {
-          // Vẫn đang gen: log debug mỗi 10s
-          if (Date.now() - lastDebugLog > 10000) {
-            lastDebugLog = Date.now();
-            console.log('[HosiFlow Bridge] Muse đang gen video... đợi...');
+        if (isStopVisible) {
+          videoGenStarted = true;
+          if (Date.now() - lastLogTime > 8000) {
+            lastLogTime = Date.now();
+            console.log('[HosiFlow Bridge] Muse đang render video... vui lòng đợi...');
           }
-          await delay(800, signal);
-          continue;
-        }
-
-        // Stop button biến mất → Muse ĐÃ XONG
-        console.log('[HosiFlow Bridge] Stop button biến mất → Muse đã xong. Đang tìm video URL...');
-
-        // Chiến lược 2: PerformanceAPI
-        const perfUrl = getVideoUrlFromPerformance(perfStartTime);
-        if (perfUrl) {
-          console.log('[HosiFlow Bridge] ✅ VIDEO URL từ PerformanceAPI:', perfUrl);
-          return { ok: true, url: perfUrl, endFrame: null };
-        }
-
-        // Chiến lược 3: DOM attribute scan
-        const newVideoEls = hasNewVideoAttachment(baselineVideoEls);
-        console.log('[HosiFlow Bridge] New video elements found:', newVideoEls.length);
-
-        for (const el of newVideoEls) {
-          const domUrl = getVideoUrlFromDOM(el);
-          if (domUrl) {
-            console.log('[HosiFlow Bridge] ✅ VIDEO URL từ DOM scan:', domUrl);
-            return { ok: true, url: domUrl, endFrame: null };
-          }
-          // Chiến lược 4: React fiber
-          const fiberUrl = getVideoUrlFromReactFiber(el);
-          if (fiberUrl) {
-            console.log('[HosiFlow Bridge] ✅ VIDEO URL từ React fiber:', fiberUrl);
-            return { ok: true, url: fiberUrl, endFrame: null };
-          }
-        }
-
-        // Chiến lược 5: Click play trên video container mới nhất
-        if (newVideoEls.length > 0 && videoClickAttempts < 3) {
-          videoClickAttempts++;
-          const target = newVideoEls[newVideoEls.length - 1];
-          console.log(`[HosiFlow Bridge] Click play để load video src (lần ${videoClickAttempts}/3)...`);
-          const clickUrl = await clickPlayAndWaitForVideoSrc(target, signal);
-          if (clickUrl) {
-            console.log('[HosiFlow Bridge] ✅ VIDEO URL sau click play:', clickUrl);
-            return { ok: true, url: clickUrl, endFrame: null };
-          }
-          // Sau click, kiểm tra lại PerformanceAPI và intercept
           await delay(1000, signal);
-          const perfUrl2 = getVideoUrlFromPerformance(perfStartTime);
-          if (perfUrl2) return { ok: true, url: perfUrl2, endFrame: null };
-          const interceptedUrl2 = getInterceptedVideoUrl(capturedBeforeSet);
-          if (interceptedUrl2) return { ok: true, url: interceptedUrl2, endFrame: null };
           continue;
         }
 
-        // DEBUG: Dump toàn bộ thông tin để điều tra
-        if (Date.now() - lastDebugLog > 5000) {
-          lastDebugLog = Date.now();
-          const allVideos = [...document.querySelectorAll('video')];
-          const allAttach = [...document.querySelectorAll('[data-testid^="hatch-chat-attachment"]')];
-          const perfAll = performance.getEntriesByType('resource').filter(e => /video|mp4|webm|media|cdn|muse/i.test(e.name));
-          console.log('[HosiFlow Bridge] DEBUG videos:', allVideos.map(v => ({ src: v.src, currentSrc: v.currentSrc, poster: v.poster })));
-          console.log('[HosiFlow Bridge] DEBUG attachments:', allAttach.map(el => ({ tid: el.dataset.testid, html: el.outerHTML.slice(0, 400) })));
-          console.log('[HosiFlow Bridge] DEBUG perf resources:', perfAll.map(e => e.name));
-          console.log('[HosiFlow Bridge] DEBUG intercepted:', _interceptedVideoUrls);
-          console.log('[HosiFlow Bridge] DEBUG new video els:', newVideoEls.map(el => el.outerHTML.slice(0, 300)));
+        // 3. Kiểm tra xem có reply mới từ Muse chưa
+        const currentBubbles = assistantMessageElements();
+        const newBubbles = currentBubbles.filter(b => !priorBubbles.has(b));
+        const hasNewReply = newBubbles.length > 0;
+
+        // Nếu chưa từng thấy Stop và cũng chưa có reply mới: đợi thêm
+        if (!videoGenStarted && !hasNewReply) {
+          await delay(600, signal);
+          continue;
         }
 
-        // Chờ DOM thay đổi và thử lại
-        await waitForDOMChange(2000, signal);
+        // Muse ĐÃ HOÀN THÀNH VIDEO (nút Stop đã tắt và có reply mới hoặc đã từng chạy qua Stop)
+        console.log('[HosiFlow Bridge] Muse đã hoàn thành video! Đang lấy URL video...');
+        await delay(1200, signal); // Đợi React render xong các component con
+
+        // Trích xuất video URL
+        const videoRes = await extractVideoResult(newBubbles, startTime, signal);
+        if (videoRes && videoRes.url) {
+          console.log('[HosiFlow Bridge] ✅ HOÀN THÀNH VIDEO XUẤT SẮC:', videoRes.url);
+          return { ok: true, url: videoRes.url, endFrame: videoRes.endFrame || null };
+        }
+
+        // Nếu chưa tìm thấy URL, đợi thêm rồi thử lại
+        await delay(1500, signal);
         continue;
       }
 
-      // ===== XỬ LÝ ẢNH =====
+      // ==========================================
+      // NHÁNH 2: XỬ LÝ GENERATE IMAGE
+      // ==========================================
       const freshImages = imageAttachments(baselineImageSrcs);
       if (freshImages.length > 0) {
         const [ratioW, ratioH] = String(size || '16:9').split(':').map(Number);
@@ -626,21 +570,23 @@
         }
       }
 
-      // Kiểm tra refusal và credits
-      const stop = isMuseStillGenerating();
+      // Kiểm tra từ chối (refusal) & hết credits
+      const isStopVisible = Boolean(document.querySelector(
+        '[data-testid="hatch-composer-stop-button"],button[aria-label*="Stop" i],button[aria-label*="停止"]'
+      ));
       const ctx = readNewAssistantContext(priorBubbleTexts);
       if (isRefusalContext(ctx)) {
         if (ctx !== refusalContext) { refusalContext = ctx; refusalContextSince = Date.now(); }
         if (Date.now() - refusalContextSince >= 1200) {
-          if (stop) clickMuseStop();
+          if (isStopVisible) clickMuseStop();
           const e = new Error(`Muse could not generate this scene: ${ctx.slice(-700)}`); e.code = 'SCENE_REFUSED'; throw e;
         }
       } else { refusalContext = ''; refusalContextSince = 0; }
-      if (!stop) {
+      if (!isStopVisible && Date.now() - startTime > 5000) {
         const tail = (document.body?.innerText || '').slice(-800);
         if (/out of credits|insufficient credits|额度不足|积分不足/i.test(tail)) throw new Error('Muse account has insufficient image credits.');
       }
-      await waitForDOMChange(Math.min(500, deadline - Date.now()), signal);
+      await delay(600, signal);
     }
     throwIfAborted();
     throw new Error(`Timed out waiting for a new Muse ${mediaType} attachment. Prompt was submitted once; it was not resubmitted.`);
