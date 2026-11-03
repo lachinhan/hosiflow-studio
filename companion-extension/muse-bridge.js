@@ -132,6 +132,13 @@
     if(!setter)throw new Error('Muse message box is unsupported.');
     let targetPrompt = String(prompt || '').trim();
     const targetSize = size || '16:9';
+    if (mediaType === 'video') {
+      if (referenceList.length > 0 && !/animate.*video/i.test(targetPrompt)) {
+        targetPrompt = `Animate this exact reference image into a video: ${targetPrompt}`;
+      } else if (!/video/i.test(targetPrompt)) {
+        targetPrompt = `Generate a cinematic video: ${targetPrompt}`;
+      }
+    }
     if (!/--(?:ar|aspect)\s+\d+:\d+/i.test(targetPrompt)) {
       const ratioKeyword = targetSize === '16:9' ? '--ar 16:9, widescreen 16:9 horizontal'
         : targetSize === '9:16' ? '--ar 9:16, vertical 9:16 portrait'
@@ -181,7 +188,26 @@
       const fresh=attachments().filter(a=>!baseline.has(a.src));
       const matching=fresh.filter(a=>mediaType==='video'?a.isVideo:!a.isVideo);
       const wrongMedia=fresh.find(a=>mediaType==='image'?a.isVideo:!a.isVideo);
-      if(wrongMedia){if(!wrongMediaSince)wrongMediaSince=Date.now();if(Date.now()-wrongMediaSince>=1800){const expected=mediaType==='image'?'image':'video',actual=mediaType==='image'?'video':'image';const error=new Error(`Muse returned a ${actual} for a Generate ${expected==='image'?'Image':'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);error.code='MEDIA_TYPE_MISMATCH';throw error;}}
+      if(wrongMedia){
+        if (mediaType === 'video') {
+          const animateBtn = [...document.querySelectorAll('button, [role="button"]')].filter(visible).find(b =>
+            /animate.*video|animate this|animate into/i.test(`${b.getAttribute('aria-label') || ''} ${b.innerText || ''}`)
+          );
+          if (animateBtn && !animateBtn.disabled) {
+            animateBtn.click();
+            wrongMediaSince = 0;
+            await delay(1500, signal);
+            continue;
+          }
+        }
+        if(!wrongMediaSince)wrongMediaSince=Date.now();
+        if(Date.now()-wrongMediaSince>=15000){
+          const expected=mediaType==='image'?'image':'video',actual=mediaType==='image'?'video':'image';
+          const error=new Error(`Muse returned a ${actual} for a Generate ${expected==='image'?'Image':'Video'} node. Switch the Muse composer to ${expected} generation, then retry.`);
+          error.code='MEDIA_TYPE_MISMATCH';
+          throw error;
+        }
+      }
       else wrongMediaSince=0;
       const [ratioW,ratioH]=String(size||'16:9').split(':').map(Number),expectedRatio=ratioW>0&&ratioH>0?ratioW/ratioH:1;
       const measured=matching.filter(a=>a.width>0&&a.height>0).sort((a,b)=>{
