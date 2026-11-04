@@ -151,9 +151,13 @@ Hỗ trợ kỹ thuật, đóng góp tính năng, báo lỗi hoặc hợp tác t
 
 ---
 
-## 📄 Bản Quyền & Giấy Phép
+## 📄 Bản Quyền, Nguồn Tham Khảo & Giấy Phép (Credits & License)
 
-Phát hành theo giấy phép **MIT License**. Xem chi tiết tại file [LICENSE](LICENSE).
+- **HosiFlow Studio (Desktop App):** Được phát hành theo giấy phép **[MIT License](LICENSE)**. Bản quyền © 2026 La Chí Nhân.
+- **HosiFlow Companion Extension (`companion-extension/`):** 
+  - Phần tiện ích mở rộng có tham khảo, kế thừa và tích hợp các module xử lý DOM, cơ chế bóc tách video attachments và pipeline WebAssembly từ dự án nguồn mở **[MuseFlow](https://github.com/bynne2602/museflow)** của tác giả **bynne2602**.
+  - Tiện ích mở rộng cùng thư viện đính kèm **FFmpeg WebAssembly Core** (với codec x264/x265) được phân phối theo giấy phép **GNU General Public License v2.0 (GPL-2.0-or-later)**.
+  - Toàn bộ điều khoản chi tiết, ghi nhận tác giả và mã nguồn gốc được lưu trữ tại file [companion-extension/THIRD_PARTY_NOTICES.md](companion-extension/THIRD_PARTY_NOTICES.md) và [companion-extension/LICENSE](companion-extension/LICENSE).
 
 ---
 
