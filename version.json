@@ -1,14 +1,15 @@
 {
-  "version": "0.1.1",
+  "version": "0.1.2",
   "name": "HosiFlow Studio",
   "releaseDate": "2026-11-04",
-  "description": "Bản cập nhật v0.1.1 hoàn thiện giải pháp kết nối Muse.ai, sửa lỗi nạp ảnh tham chiếu và tối ưu stream video trực tiếp.",
+  "description": "Bản cập nhật v0.1.2: Bố cục thanh công cụ Toolbar tinh gọn, đổi tên & xoá Nodes linh hoạt, xuất video Native FFmpeg với chọn thư mục lưu và ẩn 100% cửa sổ CMD đen.",
   "changelog": [
-    "Khắc phục 100% lỗi nạp ảnh tham chiếu (Fixed Mixed Content & Reference Attachments)",
-    "Hỗ trợ Local Media Streaming tốc độ cao qua Axum Server nội bộ",
-    "Bổ sung hệ thống kiểm tra và thông báo phiên bản mới tự động",
-    "Thêm tùy chọn tải trực tiếp file cài đặt và Companion Extension ngay trên App",
-    "Nâng cấp Companion Extension lên v1.3.1 hoạt động ổn định và mượt mà"
+    "Tái cấu trúc thanh công cụ Toolbar trực quan, phân nhóm gọn gàng và hiện đại",
+    "Thêm tính năng đặt tên / đổi tên Node nhanh bằng cách nhấp trực tiếp vào tiêu đề",
+    "Bổ sung nút xoá Node trực quan trên thanh tiêu đề và phím tắt Delete/Backspace",
+    "Tối ưu bộ xuất video Native FFmpeg: giải mã Base64 tự động, tùy chọn thư mục lưu trữ và nút mở thư mục bôi đen file video",
+    "Ẩn hoàn toàn cửa sổ CMD đen khi xuất video để mang lại trải nghiệm mượt mà 100%",
+    "Tích hợp hộp thoại lưu và mở dự án (.hosiflow) chuẩn Windows Native"
   ],
   "downloadLinks": {
     "portableExe": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/HosiFlow-Studio.exe",
