@@ -8,7 +8,8 @@
     "Tự động bắt chính xác URL âm thanh gốc Google Cloud Storage và nạp ngay vào Node trên Canvas",
     "Cắt thời lượng BGM chuẩn xác theo số giây đã chọn (5s/15s/30s...) bằng FFmpeg trên server nội bộ",
     "Chế độ tạo nhạc thụ động 100%, không can thiệp hay phát nhạc cũ khi đang chờ AI xử lý",
-    "Tối ưu hóa bộ kết nối Chrome Extension và HosiFlow Studio Server cổng 4826"
+    "Tối ưu hóa bộ kết nối Chrome Extension và HosiFlow Studio Server cổng 4826",
+    "Bổ sung mục Quà Tặng Tân Thủ & Nhận Credits Miễn Phí (500 Credits Google Flow Music & 1 Tỷ Muse Tokens)"
   ],
   "downloadLinks": {
     "portableExe": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/HosiFlow-Studio.exe",
