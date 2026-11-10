@@ -1,15 +1,15 @@
 {
-  "version": "0.1.3",
+  "version": "0.1.4",
   "name": "HosiFlow Studio",
-  "releaseDate": "2026-11-09",
-  "description": "Bản cập nhật v0.1.3: Nâng cấp tạo nhạc nền BGM Google Flow Music qua tiện ích HosiFlow Companion v1.5.7, tự động bắt audio stream chuẩn GCS, chế độ thụ động êm ái và tự động cắt nhạc đúng thời lượng video bằng FFmpeg.",
+  "releaseDate": "2026-11-10",
+  "description": "Bản cập nhật v0.1.4: Nâng cấp toàn diện trạm làm Music Video (MV) ca nhạc kết hợp Google Flow Music & Muse.ai. Bổ sung chế độ tạo bài hát ca nhạc đầy đủ (Full Song), soạn thảo lời bài hát (Lyrics/Verse/Chorus), tùy chọn giọng hát (Nam/Nữ/Song ca), 12 phong cách âm nhạc đa dạng (V-Pop, Ballad, EDM, R&B, Rap...) và nút tự động phân cảnh MV sang Canvas.",
   "changelog": [
-    "Tích hợp và tối ưu luồng tạo nhạc nền BGM Google Flow Music qua HosiFlow Companion v1.5.7",
-    "Tự động bắt chính xác URL âm thanh gốc Google Cloud Storage và nạp ngay vào Node trên Canvas",
-    "Cắt thời lượng BGM chuẩn xác theo số giây đã chọn (5s/15s/30s...) bằng FFmpeg trên server nội bộ",
-    "Chế độ tạo nhạc thụ động 100%, không can thiệp hay phát nhạc cũ khi đang chờ AI xử lý",
-    "Tối ưu hóa bộ kết nối Chrome Extension và HosiFlow Studio Server cổng 4826",
-    "Bổ sung mục Quà Tặng Tân Thủ & Nhận Credits Miễn Phí (500 Credits Google Flow Music & 1 Tỷ Muse Tokens)"
+    "Hỗ trợ chế độ tạo Bài Hát Ca Nhạc MV (Full Song) hoàn chỉnh ~2-3 phút, không bị ép cắt ngắn về 5s",
+    "Bổ sung ô nhập Lời bài hát (Lyrics / Verse - Chorus) và mô tả nhạc cụ, giai điệu phong phú",
+    "Tùy chọn phong cách giọng hát: Có lời hát (Vocal - Giọng Nữ / Giọng Nam / Song ca) hoặc Không lời (Instrumental)",
+    "Thêm danh mục 12 preset âm nhạc đặc sắc (V-Pop, Ballad, EDM, R&B, Rock, Rap, Anime, Bolero...) và chế độ Tự Viết Tùy Chỉnh (Custom)",
+    "Nút chức năng mới '🎬 Phân Cảnh MV Vào Canvas': Tự động sinh chuỗi 5 Cảnh Video (Intro, Verse, Chorus, Bridge, Outro) khớp với bài hát",
+    "Nâng cấp HosiFlow Companion lên v1.5.8: Hỗ trợ thời lượng Full Track (duration=0 không cắt), giữ trọn vẹn file nhạc gốc"
   ],
   "downloadLinks": {
     "portableExe": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/HosiFlow-Studio.exe",

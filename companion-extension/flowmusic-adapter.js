@@ -223,7 +223,7 @@
             jobId: message.requestId,
             nodeId: message.nodeId,
             ok: true,
-            duration: message.duration || 5,
+            duration: typeof message.duration === 'number' ? message.duration : 0,
             url: result.url,
             title: result.title,
             versions: result.versions || [],
@@ -236,7 +236,7 @@
             jobId: message.requestId,
             nodeId: message.nodeId,
             ok: false,
-            duration: message.duration || 5,
+            duration: typeof message.duration === 'number' ? message.duration : 0,
             error: error.message || String(error),
           });
         })

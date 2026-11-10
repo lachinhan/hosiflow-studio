@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>Trạm Làm Phim AI Độc Lập Chuyên Nghiệp — Tự Động Hóa Kịch Bản, Khóa Nhân Vật Đa Chiều, Nhạc Nền Google Flow Music & Bàn Dựng Timeline Điện Ảnh</strong>
+  <strong>Trạm Làm Phim & MV Ca Nhạc AI Độc Lập Chuyên Nghiệp — Tự Động Hóa Kịch Bản, Khóa Nhân Vật Đa Chiều, Sáng Tác Bài Hát Google Flow Music & Bàn Dựng Timeline Điện Ảnh</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v0.1.3-8b5cf6?style=for-the-badge&logo=rocket" alt="Version v0.1.3" />
-  <img src="https://img.shields.io/badge/Companion-v1.5.7-06b6d4?style=for-the-badge&logo=googlechrome" alt="Companion v1.5.7" />
+  <img src="https://img.shields.io/badge/Version-v0.1.4-8b5cf6?style=for-the-badge&logo=rocket" alt="Version v0.1.4" />
+  <img src="https://img.shields.io/badge/Companion-v1.5.8-06b6d4?style=for-the-badge&logo=googlechrome" alt="Companion v1.5.8" />
   <img src="https://img.shields.io/badge/Zero%20API%20Cost-100%25%20Free-10b981?style=for-the-badge" alt="Zero API Cost" />
   <img src="https://img.shields.io/badge/Engine-Native%20Rust%20%26%20FFmpeg%207.1-f59e0b?style=for-the-badge" alt="Native Engine" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License" />
@@ -18,16 +18,16 @@
 
 <p align="center">
   <a href="./HosiFlow%20Studio_Setup.exe"><strong>📥 Tải Bản Cài Đặt (Setup .exe - 2.4 MB)</strong></a> •
-  <a href="./HosiFlow-Studio.exe"><strong>⚡ Tải Bản Chạy Ngay (Portable .exe - 3.5 MB)</strong></a> •
+  <a href="./HosiFlow-Studio.exe"><strong>⚡ Tải Bản Chạy Ngay (Portable .exe - 9.9 MB)</strong></a> •
   <a href="./companion-extension.zip"><strong>📦 Tải Tiện Ích Companion (.zip)</strong></a>
 </p>
 
 <p align="center">
-  <a href="#-có-gì-mới-trong-bản-v013">Có Gì Mới v0.1.3</a> •
+  <a href="#-có-gì-mới-trong-bản-v014">Có Gì Mới v0.1.4</a> •
   <a href="#-tính-năng-cốt-lõi">Tính Năng Cốt Lõi</a> •
+  <a href="#-hướng-dẫn-làm-mv-ca-nhạc-hoàn-chỉnh">Làm MV Ca Nhạc</a> •
   <a href="#-quà-tặng-tân-thủ--credits-miễn-phí">Quà Tân Thủ</a> •
   <a href="#-hướng-dẫn-cài-đặt">Cài Đặt</a> •
-  <a href="#-hướng-dẫn-sử-dụng-nhanh">Sử Dụng</a> •
   <a href="#-lịch-sử-phiên-bản-changelog">Changelog</a> •
   <a href="#️-support--donations">Ủng Hộ</a>
 </p>
@@ -54,20 +54,43 @@ Khác với các công cụ web rời rạc hay các phần mềm bắt buộc p
 
 ---
 
-## 🚀 Có Gì Mới Trong Bản v0.1.3?
+## 🚀 Có Gì Mới Trong Bản v0.1.4?
 
-* 🎵 **Tích hợp Node Tạo Nhạc Nền BGM (Google Flow Music):**
-  * Tự động hóa soạn prompt âm nhạc trên [flowmusic.app](https://www.flowmusic.app).
-  * Đầy đủ Preset thể loại âm nhạc: *Điện ảnh (Cinematic), Lo-Fi Chill, Cyberpunk Synthwave, Giao hưởng Hào Hùng, Kinh dị / Hồi hộp, TikTok Viral Beat, Guitar Mộc Mạc...*
-  * Bắt chuẩn xác luồng stream âm thanh gốc từ Google Cloud Storage (`producer-app-public/clips/{uuid}.m4a`).
-* ✂️ **Tự Động Cắt Nhạc (Auto-Trim) Bằng FFmpeg Nội Bộ:**
-  * Tính năng **Khớp tổng video (Auto)**: Nhạc nền được tự động đo và cắt gọt chuẩn xác theo đúng tổng số giây của các scene video trên Canvas bằng bộ lọc âm thanh `afade` Native FFmpeg.
-* 🌐 **Nâng cấp HosiFlow Companion lên v1.5.7:**
-  * Hỗ trợ nhận diện Multi-Tab thông minh: Tab Muse.ai (`MUSE`), tab Google Flow Music (`FLOW`), hoặc cả hai (`ALL`).
-  * In-Page Passive Engine chạy trong Page World (`world: "MAIN"`): Bắt luồng âm thanh tự nhiên 100%, chấm dứt hoàn toàn tình trạng play/pause nhạc cũ.
-* 🎁 **Tích hợp Hộp Thoại Quà Tặng Tân Thủ & Nhận Credits Miễn Phí:**
-  * Nhận ngay **500 Credits Google Flow Music** và **1 Tỷ Muse Tokens** miễn phí.
-* ⚡ **Sửa Lỗi Đồng Bộ Phiên Bản:** Đồng bộ trực tiếp phiên bản Desktop với cấu hình hệ thống, loại bỏ triệt để thông báo cập nhật sai lệch khi khởi động.
+* 🎤 **Nâng Cấp Toàn Diện Node Sáng Tác Ca Khúc & MV Ca Nhạc:**
+  * **Chế độ 1 — Bài Hát MV (Ca Nhạc / Full Song):** Cho phép tạo ca khúc hoàn chỉnh độ dài đầy đủ ~2-3 phút, giữ trọn vẹn bản thu gốc từ FlowMusic mà không bị ép cắt ngắn về 5 giây.
+  * **Soạn thảo Lời Bài Hát (Lyrics / Verse - Chorus):** Khung nhập ca từ chuyên dụng có thể gõ hoặc dán lời bài hát tiếng Việt / tiếng Anh kèm cấu trúc phân đoạn `[Verse 1]`, `[Chorus]`, `[Outro]`.
+  * **Tùy Chọn Giọng Hát (Vocals):** Chọn linh hoạt giữa **Có lời (Vocal)** với chất giọng `👩 Giọng Nữ`, `👨 Giọng Nam`, `👫 Song Ca` hoặc **Không lời (Instrumental)**.
+  * **12 Thể Loại Âm Nhạc & Chế Độ Tự Viết (Custom):** Bổ sung phong phú các phong cách: *V-Pop, Pop Ballad, EDM Dance, R&B Soul, Acoustic Guitar, Rap/Hip-Hop, Indie Rock, Anime J-Pop, Bolero Trữ Tình...* cùng tùy chọn `✨ Tự Viết / Tùy Chỉnh` tự do sáng tạo không bao giờ bị ghi đè.
+* 🎬 **Nút Chức Năng Đột Phá: "Phân Cảnh MV Vào Canvas":**
+  * Tự động sinh chuỗi 5 Node Cảnh Video (*Intro, Đoạn hát 1, Điệp khúc cao trào, Cao trào cốt truyện, Đoạn kết Outro*) trên Canvas tương ứng với nhịp bài hát, nối sẵn Continuity để bạn gửi lệnh render sang Muse.ai.
+* 🌐 **HosiFlow Companion v1.5.8:**
+  * Đồng bộ thông số thời lượng thông minh: Hỗ trợ chế độ Full Length (`duration = 0`), bảo toàn 100% độ dài và chất lượng bài hát gốc khi tải về máy.
+
+---
+
+## 🎤 Hướng Dẫn Sáng Tác MV Ca Nhạc Hoàn Chỉnh
+
+Quy trình 4 bước đơn giản để tạo ra một MV ca nhạc AI chất lượng cao từ con số 0:
+
+1. **Tạo Bài Hát với Google Flow Music:**
+   * Bấm nút **`Bài Hát & Nhạc`** trên thanh công cụ để thêm Node âm thanh vào Canvas.
+   * Chọn chế độ **`Bài Hát MV (Ca Nhạc)`**.
+   * Chọn thể loại ca khúc (vd: *V-Pop Nhạc Trẻ*, *Pop Ballad*, *EDM*...) hoặc chọn *Tự Viết / Tùy Chỉnh*.
+   * Chọn giọng hát mong muốn (*Nữ, Nam, hoặc Song ca*).
+   * Dán lời bài hát (Lyrics) và mô tả giai điệu nhạc cụ vào ô soạn thảo.
+   * Để thời lượng là **`⭐ Nguyên bài gốc (~2-3 phút, không cắt)`** và bấm **`Tạo Bài Hát Ca Nhạc (Google Flow Music)`**.
+
+2. **Bung Phân Cảnh MV Sang Canvas:**
+   * Khi bài hát đã tạo xong, bấm nút **`🎬 Phân Cảnh MV Vào Canvas (+5 Cảnh Video)`**.
+   * Hệ thống tự động tạo 5 phân cảnh video ăn khớp (*Mở đầu Intro, Đoạn Hát 1, Điệp Khúc Bùng Nổ, Cốt Truyện Kịch Tính, Đoạn Kết Outro*) nối sẵn Continuity.
+
+3. **Khóa Nhân Vật Ca Sĩ / Diễn Viên MV:**
+   * Thêm Node **Character Vault**, nạp ảnh chân dung ca sĩ / diễn viên chính của bạn và bấm **`⚡ Tự Động Nối Sang Mọi Cảnh`** để gương mặt đồng nhất trên toàn bộ video.
+
+4. **Render Video & Dựng MV Trên Timeline:**
+   * Bấm **`Chạy Workflow`** (hoặc bấm tạo từng cảnh) để Muse.ai render các đoạn clip MV.
+   * Mở **Timeline Dock** ở đáy màn hình: Bài hát sẽ nằm ở rãnh **BGM Track**, còn các video clip nằm ở rãnh **Video Track**.
+   * Bấm **`Xuất Phim (Native FFmpeg)`** để xuất ra file MV ca nhạc hoàn chỉnh chất lượng cao!
 
 ---
 
@@ -171,6 +194,13 @@ Bạn có thể tải trực tiếp ngay trên trang GitHub này:
 ---
 
 ## 📋 Lịch Sử Phiên Bản (Changelog)
+
+### v0.1.4 (10/11/2026)
+* **Nâng cấp Music Video (MV) Workstation:** Bổ sung chế độ sáng tác Bài Hát MV (Full Song) hoàn chỉnh ~2-3 phút, giữ trọn vẹn bản thu gốc, không bị ép cắt ngắn về 5s.
+* **Soạn thảo Ca từ (Lyrics) & Vocals:** Hỗ trợ nhập lời bài hát, phân đoạn `[Verse]`, `[Chorus]`, tùy chọn giọng hát Nữ / Nam / Song Ca hoặc Không lời (Instrumental).
+* **Bổ sung 12 Preset Thể Loại & Tùy Chỉnh:** V-Pop, Ballad, EDM, R&B, Rock, Rap, Anime, Bolero... và chế độ Tự Viết Tùy Chỉnh (Custom).
+* **Tính năng Phân Cảnh MV Vào Canvas:** Tự động tạo 5 Node Cảnh Video tương ứng với bài hát nối sẵn Continuity để render trên Muse.ai.
+* **HosiFlow Companion v1.5.8:** Hỗ trợ chế độ tải Full Track (`duration = 0`) bảo toàn 100% độ dài và chất lượng file âm thanh gốc.
 
 ### v0.1.3 (09/11/2026)
 * **Tích hợp Google Flow Music BGM Engine:** Thêm Node tạo nhạc nền chuyên dụng với đầy đủ preset thể loại âm nhạc phong phú.

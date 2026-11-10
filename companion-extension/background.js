@@ -92,7 +92,8 @@ async function handleJobCompleted(data) {
     activeWatchdogs.delete(jobId);
   }
 
-  const jobDuration = data.duration || jobDurationMap.get(jobId) || 5;
+  const rawDur = typeof data.duration === 'number' ? data.duration : jobDurationMap.get(jobId);
+  const jobDuration = typeof rawDur === 'number' ? rawDur : 0;
 
   let finalUrl = data.url || null;
   const processedVersions = [];
@@ -104,7 +105,7 @@ async function handleJobCompleted(data) {
       const isVideo = url.startsWith('data:video/') || url.includes('.mp4');
       const ext = isVideo ? 'mp4' : 'mp3';
       const mime = isVideo ? 'video/mp4' : 'audio/mpeg';
-      const trimParam = (!isVideo && jobDuration) ? `&trim_seconds=${encodeURIComponent(jobDuration)}` : '';
+      const trimParam = (!isVideo && jobDuration > 0) ? `&trim_seconds=${encodeURIComponent(jobDuration)}` : '';
 
       let res = null;
       for (let retry = 0; retry < 5; retry++) {
@@ -373,7 +374,7 @@ async function pollAndExecuteJob(museTabId, flowTabId) {
       // 1. TÁC VỤ ÂM NHẠC -> Chuyển sang Google Flow Music (flowmusic.app)
       if (job.media_type === 'audio') {
         let activeFlowTabId = flowTabId;
-        const targetDuration = job.duration || 5;
+        const targetDuration = typeof job.duration === 'number' ? job.duration : 0;
         jobDurationMap.set(job.id, targetDuration);
 
         if (activeFlowTabId) {
