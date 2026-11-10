@@ -42,9 +42,9 @@ Khác với các công cụ web rời rạc hay các phần mềm bắt buộc p
 1. **Visual Node Canvas (Mạng lưới Node trực quan)** đa luồng.
 2. **Bộ phân tích kịch bản tiếng Việt thông minh** (Script → Nodes Engine).
 3. **Hệ thống khóa nhân vật Model Sheet đa góc (Character Vault)**.
-4. **Node Tạo Nhạc Nền BGM Điện Ảnh với Google Flow Music**.
-5. **Bàn dựng Timeline Native FFmpeg tốc độ cao**.
-6. **HosiFlow Companion Extension (v1.5.7)** — Cầu nối vệ tinh đa nền tảng điều khiển song song **Muse.ai** và **Google Flow Music**.
+4. **Node Tạo Nhạc Nền BGM Điện Ảnh & Sáng Tác Bài Hát MV với Google Flow Music**.
+5. **Bàn dựng Timeline 2 Rãnh (Track Video & Track BGM Nhạc) với Native FFmpeg tốc độ cao**.
+6. **HosiFlow Companion Extension (v1.5.8)** — Cầu nối vệ tinh đa nền tảng điều khiển song song **Muse.ai** và **Google Flow Music**.
 
 ### 💡 Điểm Đột Phá: Cơ Chế "Zero API Cost" — Tiết Kiệm Tối Đa Chi Phí
 * **Hoàn Toàn Không Cần API Key:** Không bắt buộc bạn phải đăng ký tài khoản lập trình viên, không cần thẻ tín dụng quốc tế, không lo mua token API hàng tháng đắt đỏ.
@@ -56,6 +56,15 @@ Khác với các công cụ web rời rạc hay các phần mềm bắt buộc p
 
 ## 🚀 Có Gì Mới Trong Bản v0.1.4?
 
+* 🎼 **Preset Mới: "MV Ca Nhạc V-Pop Điện Ảnh" (Thư Viện Mẫu Workflow):**
+  * Tích hợp mẫu quy trình hoàn chỉnh chuyên biệt cho MV ca nhạc ở ô số 4 trong thư viện Presets.
+  * Thiết lập sẵn **Character Vault** (khóa mặt ca sĩ Hà An), **Node Sáng Tác Ca Khúc V-Pop** (có lời, ~2-3 phút) và **4 phân cảnh video Muse.ai** kết nối liền mạch (Continuity Lock).
+* 🔗 **Cổng Nhận Âm Thanh (`audio-in`) & Nối Dây Âm Nhạc Trực Quan Trên Canvas:**
+  * Bổ sung cổng Handle màu tím **`audio`** trên Node Video (`GenerateVideoNode`), cho phép nối trực tiếp dây âm thanh từ Node Nhạc sang phân cảnh video.
+  * **Tự động điều phối thứ tự thực thi (Topological Sort):** Khi bấm **"Chạy Workflow"**, hệ thống tự động nhận diện quan hệ phụ thuộc để ưu tiên tạo bài hát trên FlowMusic trước $\rightarrow$ nạp bài hát vào Timeline $\rightarrow$ rồi mới lần lượt chạy các cảnh video trên Muse.ai.
+* 🎞️ **Bàn Dựng 2 Rãnh & Xuất Phim Hoàn Chỉnh Có Nhạc (Native FFmpeg):**
+  * Tự động đồng bộ **Track 1 (Video)** và **Track 2 (BGM Audio)** trên Timeline Dock.
+  * Xuất ra **1 file video MP4 duy nhất** đã được hòa âm (mixdown & audio sync) đồng bộ cả hình ảnh lẫn lời bài hát/âm nhạc chất lượng cao, không cần công cụ ghép video bên ngoài.
 * 🎤 **Nâng Cấp Toàn Diện Node Sáng Tác Ca Khúc & MV Ca Nhạc:**
   * **Chế độ 1 — Bài Hát MV (Ca Nhạc / Full Song):** Cho phép tạo ca khúc hoàn chỉnh độ dài đầy đủ ~2-3 phút, giữ trọn vẹn bản thu gốc từ FlowMusic mà không bị ép cắt ngắn về 5 giây.
   * **Soạn thảo Lời Bài Hát (Lyrics / Verse - Chorus):** Khung nhập ca từ chuyên dụng có thể gõ hoặc dán lời bài hát tiếng Việt / tiếng Anh kèm cấu trúc phân đoạn `[Verse 1]`, `[Chorus]`, `[Outro]`.
@@ -196,6 +205,9 @@ Bạn có thể tải trực tiếp ngay trên trang GitHub này:
 ## 📋 Lịch Sử Phiên Bản (Changelog)
 
 ### v0.1.4 (10/11/2026)
+* **Preset "MV Ca Nhạc V-Pop Điện Ảnh":** Bổ sung preset quy trình MV hoàn chỉnh (Character Vault khóa mặt + Node tạo bài hát FlowMusic + 4 cảnh video Muse.ai kết nối Continuity).
+* **Cổng Nhận Âm Thanh (`audio-in`) & Nối Dây Âm Nhạc:** Bổ sung handle nhận âm thanh màu tím trên Node Video, cho phép nối dây trực tiếp và tự động ưu tiên tạo bài hát trước khi render video khi chạy toàn bộ Workflow.
+* **Bàn Dựng 2 Rãnh & Xuất Video Có Nhạc Hoàn Chỉnh:** Ghép nối tự động Track 1 (Video) và Track 2 (BGM Audio) thành 1 file MP4 hoàn chỉnh qua Native FFmpeg.
 * **Nâng cấp Music Video (MV) Workstation:** Bổ sung chế độ sáng tác Bài Hát MV (Full Song) hoàn chỉnh ~2-3 phút, giữ trọn vẹn bản thu gốc, không bị ép cắt ngắn về 5s.
 * **Soạn thảo Ca từ (Lyrics) & Vocals:** Hỗ trợ nhập lời bài hát, phân đoạn `[Verse]`, `[Chorus]`, tùy chọn giọng hát Nữ / Nam / Song Ca hoặc Không lời (Instrumental).
 * **Bổ sung 12 Preset Thể Loại & Tùy Chỉnh:** V-Pop, Ballad, EDM, R&B, Rock, Rap, Anime, Bolero... và chế độ Tự Viết Tùy Chỉnh (Custom).
