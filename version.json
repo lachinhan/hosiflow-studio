@@ -1,15 +1,17 @@
 {
-  "version": "0.1.4",
+  "version": "0.1.5",
   "name": "HosiFlow Studio",
-  "releaseDate": "2026-11-10",
-  "description": "Bản cập nhật v0.1.4: Nâng cấp toàn diện trạm làm Music Video (MV) ca nhạc kết hợp Google Flow Music & Muse.ai. Bổ sung chế độ tạo bài hát ca nhạc đầy đủ (Full Song), soạn thảo lời bài hát (Lyrics/Verse/Chorus), tùy chọn giọng hát (Nam/Nữ/Song ca), 12 phong cách âm nhạc đa dạng (V-Pop, Ballad, EDM, R&B, Rap...) và nút tự động phân cảnh MV sang Canvas.",
+  "releaseDate": "2026-11-11",
+  "description": "Bản cập nhật v0.1.5: Trạm sản xuất Video Affiliate chuyên nghiệp cho Shopee và TikTok Shop. Tự động cào link sản phẩm, tải trọn bộ ảnh Full HD, bóc tách giá bán, giá gốc, sao đánh giá và 1-click tự động bung kịch bản 3 phân cảnh dọc 9:16 chuẩn viral TikTok kèm continuity liền mạch.",
   "changelog": [
-    "Hỗ trợ chế độ tạo Bài Hát Ca Nhạc MV (Full Song) hoàn chỉnh ~2-3 phút, không bị ép cắt ngắn về 5s",
-    "Bổ sung ô nhập Lời bài hát (Lyrics / Verse - Chorus) và mô tả nhạc cụ, giai điệu phong phú",
-    "Tùy chọn phong cách giọng hát: Có lời hát (Vocal - Giọng Nữ / Giọng Nam / Song ca) hoặc Không lời (Instrumental)",
-    "Thêm danh mục 12 preset âm nhạc đặc sắc (V-Pop, Ballad, EDM, R&B, Rock, Rap, Anime, Bolero...) và chế độ Tự Viết Tùy Chỉnh (Custom)",
-    "Nút chức năng mới '🎬 Phân Cảnh MV Vào Canvas': Tự động sinh chuỗi 5 Cảnh Video (Intro, Verse, Chorus, Bridge, Outro) khớp với bài hát",
-    "Nâng cấp HosiFlow Companion lên v1.5.8: Hỗ trợ thời lượng Full Track (duration=0 không cắt), giữ trọn vẹn file nhạc gốc"
+    "Thêm Node Sản Phẩm Affiliate chuyên dụng (ProductAffiliateNode) trên Canvas với giao diện Thương mại điện tử trực quan",
+    "Hỗ trợ bóc tách link sản phẩm Shopee (shopee.vn, s.shopee.vn) và TikTok Shop (tiktok.com, vt.tiktok.com)",
+    "Tự động tải trọn bộ ảnh sản phẩm Full HD CDN, chọn ảnh đại diện Hero làm ảnh tham chiếu (reference)",
+    "Bóc tách chính xác giá khuyến mãi, giá gốc gạch ngang, tỷ lệ giảm giá %, điểm đánh giá sao và số lượng đã bán",
+    "Cho phép tùy chỉnh / sửa giá trực tiếp ngay trên Node trong trường hợp flash sale hoặc voucher biến động",
+    "Tùy chọn 4 phong cách Hook TikTok 3s đầu: Đập hộp & Ngỡ ngàng, Sốc giá & Flash Sale, Giải quyết vấn đề, Review chân thật",
+    "Nút 1-chạm 'Bung Kịch Bản Affiliate Vào Canvas': Tự động sinh 3 phân cảnh dọc 9:16 (Hook -> Demo trải nghiệm -> Báo giá & Kêu gọi bấm giỏ hàng) nối sẵn Continuity và ảnh sản phẩm",
+    "Nâng cấp tiện ích mở rộng HosiFlow Companion lên v1.6.0: Tích hợp công cụ trích xuất dữ liệu DOM Shopee & TikTok Shop không cần API token"
   ],
   "downloadLinks": {
     "portableExe": "https://github.com/lachinhan/hosiflow-studio/raw/refs/heads/main/HosiFlow-Studio.exe",

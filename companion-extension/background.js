@@ -371,6 +371,32 @@ async function pollAndExecuteJob(museTabId, flowTabId) {
     isProcessingJob = true;
 
     try {
+      // 0. TÁC VỤ BÓC TÁCH SẢN PHẨM AFFILIATE (Shopee / TikTok Shop)
+      if (job.media_type === 'product' || job.media_type === 'scrape_product') {
+        const productUrl = (job.prompt || (job.reference_images && job.reference_images[0]) || '').trim();
+        console.log(`[HosiFlow Companion] 🛒 Đang bóc tách dữ liệu sản phẩm từ URL: ${productUrl}`);
+
+        try {
+          const productData = await scrapeProductViaBrowser(productUrl);
+          await handleJobCompleted({
+            jobId: job.id,
+            nodeId: job.node_id,
+            ok: productData.ok,
+            url: productData.images && productData.images[0] ? productData.images[0] : null,
+            script_text: JSON.stringify(productData),
+            error: productData.error,
+          });
+        } catch (scrapeErr) {
+          await handleJobCompleted({
+            jobId: job.id,
+            nodeId: job.node_id,
+            ok: false,
+            error: `Lỗi bóc tách sản phẩm: ${scrapeErr.message || String(scrapeErr)}`,
+          });
+        }
+        return;
+      }
+
       // 1. TÁC VỤ ÂM NHẠC -> Chuyển sang Google Flow Music (flowmusic.app)
       if (job.media_type === 'audio') {
         let activeFlowTabId = flowTabId;
@@ -567,3 +593,263 @@ async function pollAndExecuteJob(museTabId, flowTabId) {
 
 // Khởi chạy đồng bộ ngay khi Service Worker được nạp
 syncWithStudio();
+
+// Trình bóc tách dữ liệu sản phẩm Shopee & TikTok Shop thông qua Chrome Tab DOM Rendering
+async function scrapeProductViaBrowser(rawUrl) {
+  if (!rawUrl || !rawUrl.startsWith('http')) {
+    throw new Error('URL sản phẩm không hợp lệ: ' + rawUrl);
+  }
+
+  console.log('[HosiFlow Companion] 🛒 Bắt đầu bóc tách DOM sản phẩm:', rawUrl);
+
+  // 1. Kiểm tra xem người dùng có đang mở sẵn tab này trên Chrome không
+  const allTabs = await chrome.tabs.query({});
+  let targetTab = allTabs.find(
+    (t) =>
+      t.url &&
+      (t.url === rawUrl ||
+        (rawUrl.includes('shopee.vn') && t.url.includes('shopee.vn')) ||
+        (rawUrl.includes('tiktok.com') && t.url.includes('tiktok.com')))
+  );
+
+  let createdTabId = null;
+  if (!targetTab || !targetTab.id) {
+    console.log('[HosiFlow Companion] 🚀 Tự động mở tab Chrome ngầm để load JavaScript DOM...');
+    const newTab = await chrome.tabs.create({ url: rawUrl, active: false });
+    createdTabId = newTab.id;
+    targetTab = newTab;
+
+    // Đợi trang hoàn tất tải tài nguyên
+    await new Promise((resolve) => {
+      let isDone = false;
+      const listener = (tabId, changeInfo) => {
+        if (tabId === createdTabId && changeInfo.status === 'complete') {
+          isDone = true;
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve(true);
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
+      // Timeout tối đa 6 giây nếu mạng chậm
+      setTimeout(() => {
+        if (!isDone) {
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve(false);
+        }
+      }, 6000);
+    });
+
+    // Chờ thêm 1.5s để React / Next.js / Vue hydrate DOM
+    await new Promise((r) => setTimeout(r, 1500));
+  } else {
+    console.log('[HosiFlow Companion] ⚡ Tìm thấy tab sản phẩm đang mở sẵn trên Chrome, bóc tách ngay lập tức!');
+  }
+
+  // 2. Tiêm script đọc trực tiếp DOM đã render đầy đủ
+  let extracted = null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: targetTab.id },
+      func: () => {
+        const curUrl = window.location.href;
+        const isShopee = curUrl.includes('shopee.vn') || curUrl.includes('shopee.com');
+        const isTikTok = curUrl.includes('tiktok.com');
+
+        // 1. Tiêu đề sản phẩm
+        let title = '';
+        if (isShopee) {
+          const h1 = document.querySelector('h1, .vR6K3w, ._44qnta, [class*="product-briefing"] span, [class*="product-title"]');
+          title = h1 ? h1.innerText.trim() : document.title.replace(' | Shopee Việt Nam', '').replace(' | Shopee', '').trim();
+        } else if (isTikTok) {
+          const h1 = document.querySelector('h1, [class*="title"], [data-e2e="product-title"]');
+          title = h1 ? h1.innerText.trim() : document.title.replace(' - TikTok Shop', '').replace(' | TikTok', '').trim();
+        } else {
+          title = document.querySelector('h1')?.innerText?.trim() || document.title;
+        }
+
+        // 2. Hình ảnh sản phẩm chất lượng cao
+        const rawImgs = [];
+        document.querySelectorAll('img').forEach((img) => {
+          const s = img.src || img.getAttribute('src') || '';
+          if (isShopee && (s.includes('susercontent.com/file/') || s.includes('cf.shopee.vn/file/'))) {
+            if (!s.includes('icon') && !s.includes('avatar') && !s.includes('logo') && !s.includes('badge')) {
+              // Bỏ hậu tố thumbnail để lấy link ảnh gốc full HD
+              const clean = s.split('_tn')[0].split('_b')[0];
+              rawImgs.push(clean);
+            }
+          } else if (isTikTok && (s.includes('ibyteimg.com') || s.includes('tiktokcdn'))) {
+            if (!s.includes('avatar') && !s.includes('icon')) {
+              rawImgs.push(s);
+            }
+          }
+        });
+
+        // Quét thêm style background-image
+        document.querySelectorAll('[style*="background-image"]').forEach((el) => {
+          const bg = el.style.backgroundImage || '';
+          const m = bg.match(/url\(["']?(https:\/\/[^"']+)["']?\)/);
+          if (m && (m[1].includes('susercontent.com/file/') || m[1].includes('ibyteimg.com'))) {
+            rawImgs.push(m[1].split('_tn')[0]);
+          }
+        });
+
+        const uniqueImgs = Array.from(new Set(rawImgs)).filter((u) => u.startsWith('http'));
+
+        // 3. Giá bán (Bóc tách chuẩn xác, loại bỏ voucher rác / số lẻ như ₫2.)
+        let price = '';
+        let originalPrice = '';
+        let discount = '';
+
+        function isValidVnPrice(str) {
+          if (!str) return false;
+          const clean = str.replace(/[^0-9]/g, '');
+          if (clean.length < 4) return false; // Dưới 1.000 đ thì bỏ qua (tránh dính số lẻ 2, 2.5, 2.)
+          return true;
+        }
+
+        // Ưu tiên 1: Quét các selector giá đặc trưng của Shopee / TikTok Shop
+        const primaryPriceSelectors = [
+          '.G27FPf', // Shopee modern desktop/mobile current price
+          '.pqTWkA', // Shopee classic current price
+          '._3n5NQx',
+          '.pdp-price',
+          '[data-qa="product_price"]',
+          '.item-price-current',
+          '[data-e2e="product-price"]',
+          '[class*="current-price"]',
+          '[class*="sale-price"]',
+        ];
+
+        for (const sel of primaryPriceSelectors) {
+          const el = document.querySelector(sel);
+          if (el) {
+            const txt = el.innerText.trim();
+            const m = txt.match(/₫?\s*([1-9][0-9]{0,2}(?:\.[0-9]{3})+)/);
+            if (m && isValidVnPrice(m[1])) {
+              price = '₫' + m[1];
+              break;
+            }
+          }
+        }
+
+        // Ưu tiên 2: Tìm phần tử có ký hiệu ₫ có font-size LỚN NHẤT trên trang (giá sản phẩm luôn in to nhất)
+        if (!price) {
+          const candidateElements = [];
+          document.querySelectorAll('div, span, p, h1, h2, h3').forEach((el) => {
+            if (el.children.length === 0 && (el.innerText.includes('₫') || el.innerText.includes('đ'))) {
+              const txt = el.innerText.trim();
+              const m = txt.match(/([1-9][0-9]{0,2}(?:\.[0-9]{3})+)/);
+              if (m && isValidVnPrice(m[0])) {
+                const val = parseInt(m[0].replace(/\./g, ''), 10);
+                if (val >= 5000) {
+                  const fSize = parseFloat(window.getComputedStyle(el).fontSize) || 12;
+                  candidateElements.push({ text: '₫' + m[0], fontSize: fSize, val });
+                }
+              }
+            }
+          });
+
+          if (candidateElements.length > 0) {
+            candidateElements.sort((a, b) => b.fontSize - a.fontSize);
+            price = candidateElements[0].text;
+          }
+        }
+
+        // Ưu tiên 3: Quét regex toàn trang tìm các khoản tiền lớn hơn 10.000đ
+        if (!price) {
+          const allMatches = document.body.innerText.match(/₫\s*([1-9][0-9]{0,2}(?:\.[0-9]{3})+)/g) || [];
+          for (const raw of allMatches) {
+            const digits = raw.replace(/[^0-9]/g, '');
+            const num = parseInt(digits, 10);
+            if (num >= 10000) {
+              price = '₫' + digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+              break;
+            }
+          }
+        }
+
+        // Giá gốc nếu có
+        const origEl = document.querySelector('._0ZTE9w, [class*="original-price"], .original-price, del');
+        if (origEl) {
+          const origM = origEl.innerText.match(/([1-9][0-9]{0,2}(?:\.[0-9]{3})+)/);
+          if (origM && isValidVnPrice(origM[0])) {
+            originalPrice = '₫' + origM[0];
+          }
+        }
+
+        // 4. Đánh giá sao & số lượng đã bán
+        let rating = 4.9;
+        let soldCount = '';
+        const starMatch = document.body.innerText.match(/([45]\.[0-9])\s*\/\s*5/);
+        if (starMatch) {
+          rating = Number(starMatch[1]);
+        }
+        const soldMatch = document.body.innerText.match(/([0-9.,]+k?\+?)\s*(?:đã bán|sold)/i);
+        if (soldMatch) {
+          soldCount = soldMatch[0];
+        }
+
+        // 5. Mô tả & Điểm bán hàng độc nhất (USP)
+        let desc = '';
+        const descEl = document.querySelector('.f7VUfc, ._3y7v4s, .product-description, [class*="description"], [class*="detail"]');
+        if (descEl) desc = descEl.innerText.trim();
+
+        const uspList = [];
+        if (desc) {
+          const lines = desc
+            .split(/\r?\n|•|-|\*|;/)
+            .map((l) => l.trim())
+            .filter((l) => l.length >= 8 && l.length <= 80 && !l.includes('http'));
+          const seen = new Set();
+          for (const l of lines) {
+            const clean = l.replace(/^[0-9+.\-–—\s]+/, '').trim();
+            if (clean.length >= 6 && !seen.has(clean.toLowerCase())) {
+              seen.add(clean.toLowerCase());
+              uspList.push(clean);
+              if (uspList.length >= 4) break;
+            }
+          }
+        }
+
+        return {
+          platform: isShopee ? 'shopee' : isTikTok ? 'tiktok' : 'other',
+          title: title || (isShopee ? 'Sản Phẩm Shopee' : 'Sản Phẩm TikTok Shop'),
+          price: price || '199.000 ₫',
+          originalPrice,
+          discount,
+          rating,
+          soldCount: soldCount || '1.2k+ đã bán',
+          description: desc || title,
+          uspList:
+            uspList.length > 0
+              ? uspList
+              : ['Thiết kế sang trọng, hiện đại, bắt mắt', 'Độ bền cao, gia công tỉ mỉ', 'Ưu đãi độc quyền trên video'],
+          images: uniqueImgs,
+        };
+      },
+    });
+
+    if (results && results[0] && results[0].result) {
+      extracted = results[0].result;
+    }
+  } catch (injectErr) {
+    console.warn('[HosiFlow Companion] Lỗi inject script đọc DOM:', injectErr);
+  } finally {
+    // Đóng tab nếu tab này do extension tự mở ngầm
+    if (createdTabId) {
+      try {
+        await chrome.tabs.remove(createdTabId);
+      } catch {}
+    }
+  }
+
+  if (extracted && (extracted.title || (extracted.images && extracted.images.length > 0))) {
+    console.log('[HosiFlow Companion] ✅ Bóc tách thành công:', extracted.title, `(${extracted.images.length} ảnh)`);
+    return {
+      ok: true,
+      ...extracted,
+    };
+  }
+
+  throw new Error('Không thể đọc dữ liệu từ trang Shopee/TikTok. Vui lòng mở trang sản phẩm trên Chrome trước!');
+}

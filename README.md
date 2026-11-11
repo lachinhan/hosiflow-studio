@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>Trạm Làm Phim & MV Ca Nhạc AI Độc Lập Chuyên Nghiệp — Tự Động Hóa Kịch Bản, Khóa Nhân Vật Đa Chiều, Sáng Tác Bài Hát Google Flow Music & Bàn Dựng Timeline Điện Ảnh</strong>
+  <strong>Trạm Làm Phim, MV Ca Nhạc & Video Affiliate AI Độc Lập Chuyên Nghiệp — Tự Động Hóa Kịch Bản, Khóa Nhân Vật, Bóc Tách Sản Phẩm Shopee/TikTok & Bàn Dựng Timeline Điện Ảnh</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v0.1.4-8b5cf6?style=for-the-badge&logo=rocket" alt="Version v0.1.4" />
-  <img src="https://img.shields.io/badge/Companion-v1.5.8-06b6d4?style=for-the-badge&logo=googlechrome" alt="Companion v1.5.8" />
+  <img src="https://img.shields.io/badge/Version-v0.1.5-8b5cf6?style=for-the-badge&logo=rocket" alt="Version v0.1.5" />
+  <img src="https://img.shields.io/badge/Companion-v1.6.0-06b6d4?style=for-the-badge&logo=googlechrome" alt="Companion v1.6.0" />
   <img src="https://img.shields.io/badge/Zero%20API%20Cost-100%25%20Free-10b981?style=for-the-badge" alt="Zero API Cost" />
   <img src="https://img.shields.io/badge/Engine-Native%20Rust%20%26%20FFmpeg%207.1-f59e0b?style=for-the-badge" alt="Native Engine" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License" />
@@ -23,8 +23,9 @@
 </p>
 
 <p align="center">
-  <a href="#-có-gì-mới-trong-bản-v014">Có Gì Mới v0.1.4</a> •
+  <a href="#-có-gì-mới-trong-bản-v015">Có Gì Mới v0.1.5</a> •
   <a href="#-tính-năng-cốt-lõi">Tính Năng Cốt Lõi</a> •
+  <a href="#-hướng-dẫn-làm-video-affiliate-shopee--tiktok-shop-3-bước">Video Affiliate</a> •
   <a href="#-hướng-dẫn-làm-mv-ca-nhạc-hoàn-chỉnh">Làm MV Ca Nhạc</a> •
   <a href="#-quà-tặng-tân-thủ--credits-miễn-phí">Quà Tân Thủ</a> •
   <a href="#-hướng-dẫn-cài-đặt">Cài Đặt</a> •
@@ -43,14 +44,65 @@ Khác với các công cụ web rời rạc hay các phần mềm bắt buộc p
 2. **Bộ phân tích kịch bản tiếng Việt thông minh** (Script → Nodes Engine).
 3. **Hệ thống khóa nhân vật Model Sheet đa góc (Character Vault)**.
 4. **Node Tạo Nhạc Nền BGM Điện Ảnh & Sáng Tác Bài Hát MV với Google Flow Music**.
-5. **Bàn dựng Timeline 2 Rãnh (Track Video & Track BGM Nhạc) với Native FFmpeg tốc độ cao**.
-6. **HosiFlow Companion Extension (v1.5.8)** — Cầu nối vệ tinh đa nền tảng điều khiển song song **Muse.ai** và **Google Flow Music**.
+5. **Trạm Sản Xuất Video Affiliate Shopee & TikTok Shop** — Tự động cào dữ liệu sản phẩm, bóc tách giá bán và sinh kịch bản review 9:16 chuẩn TikTok.
+6. **Bàn dựng Timeline 2 Rãnh (Track Video & Track BGM Nhạc) với Native FFmpeg tốc độ cao**.
+7. **HosiFlow Companion Extension (v1.6.0)** — Cầu nối vệ tinh đa nền tảng điều khiển song song **Muse.ai**, **Google Flow Music** và bóc tách dữ liệu E-Commerce.
 
 ### 💡 Điểm Đột Phá: Cơ Chế "Zero API Cost" — Tiết Kiệm Tối Đa Chi Phí
 * **Hoàn Toàn Không Cần API Key:** Không bắt buộc bạn phải đăng ký tài khoản lập trình viên, không cần thẻ tín dụng quốc tế, không lo mua token API hàng tháng đắt đỏ.
 * **Tận Dụng Phiên Đăng Nhập Sẵn Có:** Tự động điều khiển và thực thi trực tiếp trên phiên làm việc Muse.ai và FlowMusic.app sẵn có của bạn trên trình duyệt Chrome thông qua tiện ích mở rộng HosiFlow Companion.
 * **Sáng Tạo Không Giới Hạn:** Tận dụng triệt để tài nguyên có sẵn để viết kịch bản, tạo ảnh khung đầu, sinh video, tạo nhạc nền và dựng phim liên tục.
 * **Bảo Mật Cục Bộ 100%:** Toàn bộ kịch bản, ảnh nhân vật, video và file âm thanh được xử lý và lưu trữ ngay trên ổ cứng máy tính của bạn qua cổng kết nối nội bộ `127.0.0.1:4826`, không qua bất kỳ máy chủ trung gian nào.
+
+---
+
+## 🚀 Có Gì Mới Trong Bản v0.1.5? — Trạm Sản Xuất Video Affiliate Shopee & TikTok Shop
+
+* 🛍️ **Node Sản Phẩm Affiliate Chuyên Dụng (`ProductAffiliateNode`):**
+  * Nút chức năng mới **"🛍️ Sản Phẩm"** nổi bật trên thanh công cụ Studio Toolbar.
+  * Giao diện phong cách E-Commerce chuyên nghiệp, quản lý hình ảnh sản phẩm trực quan, thẻ tag USP tự động và chọn ảnh bìa đại diện (Hero Image).
+* 🕷️ **Tự Động Bóc Tách Link Shopee & TikTok Shop Siêu Tốc (Zero Token API):**
+  * Hỗ trợ đầy đủ các định dạng link: `shopee.vn`, link chia sẻ rút gọn `s.shopee.vn`, `tiktok.com` và link app `vt.tiktok.com`.
+  * Trích xuất trọn vẹn danh mục ảnh gốc CDN Full HD chất lượng cao, tên sản phẩm chuẩn SEO, danh mục ngành hàng và các điểm bán hàng độc nhất (USP).
+  * Thuật toán lọc giá thông minh: Nhận diện chính xác giá bán hiện tại, giá gốc gạch ngang, tỷ lệ giảm giá %, điểm đánh giá sao và số lượng đã bán.
+  * Cho phép chỉnh sửa giá trực tiếp trên Node để linh hoạt cập nhật theo các chương trình Flash Sale hoặc mã giảm giá tức thời.
+* 🎯 **4 Phong Cách Hook TikTok Viral 3 Giây Đầu:**
+  * **📦 Đập Hộp & Ngỡ Ngàng:** Kích thích tò mò, mở seal và zoom cận cảnh chi tiết hoàn thiện sản phẩm.
+  * **💥 Sốc Giá & Flash Sale:** Đánh mạnh vào yếu tố tâm lý hời, giảm giá sập sàn, deal hời chớp nhoáng.
+  * **❓ Giải Quyết Vấn Đề:** Đặt ra nỗi đau hay gặp hàng ngày và giới thiệu sản phẩm như vị cứu tinh lý tưởng.
+  * **🌟 Review Chân Thật:** Soi kỹ chất lượng thực tế, cảm nhận khách quan và độ bền vượt trội.
+* 🎬 **Nút 1-Chạm: "Bung Kịch Bản Affiliate Vào Canvas (3 Cảnh 9:16)":**
+  * Tự động sinh ngay bộ 3 phân cảnh video tỷ lệ dọc 9:16 chuẩn TikTok / Reels / Shorts:
+    * **Cảnh 1 (Hook):** Mở màn gây tò mò, bắt trọn 3s vàng của người xem, tự động kết nối ảnh Hero sản phẩm vào cổng `reference-in`.
+    * **Cảnh 2 (Demo Trải Nghiệm):** Thể hiện tính năng thực tế vượt trội và cảm nhận sử dụng.
+    * **Cảnh 3 (Báo Giá & Kêu Gọi):** Khai thác giá sốc, khuyến mãi và kêu gọi click giỏ hàng góc trái màn hình.
+  * Tự động nối dây Prompt từ kịch bản sang từng cảnh, nối dây ảnh sản phẩm và kích hoạt tính năng **Nối cảnh trước (Continuity)** giữa các cảnh video.
+* 🌐 **Nâng Cấp HosiFlow Companion v1.6.0:**
+  * Tích hợp engine cào DOM CSR trực tiếp trên phiên duyệt Chrome thông qua tab nền thông minh, bypass triệt để rào cản trang trắng JavaScript mà không tốn 1 đồng chi phí API.
+
+---
+
+## 🛍️ Hướng Dẫn Làm Video Affiliate Shopee & TikTok Shop (3 Bước)
+
+Quy trình cực nhanh để tạo ra 1 video review sản phẩm 9:16 viral trên TikTok:
+
+1. **Bóc Tách Dữ Liệu Sản Phẩm:**
+   * Bấm nút **`🛍️ Sản Phẩm`** trên thanh công cụ để thêm Node Sản Phẩm vào Canvas.
+   * Dán đường link sản phẩm Shopee (vd: `https://s.shopee.vn/...`) hoặc TikTok Shop (vd: `https://vt.tiktok.com/...`) vào ô nhập link.
+   * Bấm nút **`✨ Bóc Tách`** ➔ Hệ thống tự động cào tên, giá, số lượt bán và toàn bộ ảnh sản phẩm Full HD trong vài giây.
+
+2. **Chọn Phong Cách Hook & Bung Kịch Bản:**
+   * Nhấp chọn 1 trong các ảnh sản phẩm làm ảnh đại diện **Hero** (dùng làm ảnh tham chiếu sinh video).
+   * Bạn có thể nhấp vào ô giá để sửa giá bán tùy ý nếu đang có flash sale.
+   * Chọn 1 trong 4 phong cách Hook: *Đập Hộp & Ngỡ Ngàng*, *Sốc Giá & Flash Sale*, *Giải Quyết Vấn Đề*, hoặc *Review Chân Thật*.
+   * Bấm nút cam **`📦🎬 Bung Kịch Bản Affiliate Vào Canvas (3 Cảnh 9:16)`**. Hệ thống sẽ tự động vẽ 3 phân cảnh 9:16 kèm kịch bản prompt chi tiết nối dây sẵn sàng!
+
+3. **Render Video & Xuất Thành Phẩm:**
+   * Bạn có thể nối thêm Node Nhạc BGM sôi động nếu muốn.
+   * Bấm **`Chạy Workflow`** hoặc bấm tạo từng cảnh trên Muse.ai.
+   * Kéo các cảnh vào bàn dựng Timeline và xuất ra video 9:16 hoàn chỉnh sẵn sàng đăng TikTok / Shorts / Reels kiếm hoa hồng affiliate!
+
+---
 
 ---
 
@@ -203,6 +255,14 @@ Bạn có thể tải trực tiếp ngay trên trang GitHub này:
 ---
 
 ## 📋 Lịch Sử Phiên Bản (Changelog)
+
+### v0.1.5 (11/11/2026)
+* **Trạm Sản Xuất Video Affiliate Shopee & TikTok Shop:** Thêm Node Sản Phẩm chuyên dụng (`ProductAffiliateNode`) với giao diện Thương mại điện tử trực quan.
+* **Tự Động Bóc Tách Link Shopee & TikTok Shop:** Hỗ trợ mọi định dạng link (bao gồm link rút gọn `s.shopee.vn`, `vt.tiktok.com`), cào trọn bộ ảnh gốc Full HD từ CDN, tiêu đề sản phẩm, USP và danh mục ngành hàng.
+* **Thuật Toán Bóc Tách Giá & Thống Kê Thông Minh:** Nhận diện chính xác giá bán hiện tại, giá gốc gạch ngang, tỷ lệ giảm giá, điểm số đánh giá và số lượng đã bán. Hỗ trợ sửa giá trực tiếp trên Node.
+* **4 Phong Cách Hook TikTok 3 Giây Đầu Chuẩn Viral:** Đập Hộp & Ngỡ Ngàng, Sốc Giá & Flash Sale, Giải Quyết Vấn Đề và Review Chân Thật.
+* **Nút 1-Chạm Bung Kịch Bản 3 Phân Cảnh (9:16):** Tự động sinh chuỗi 3 cảnh video dọc chuẩn TikTok (Hook $\rightarrow$ Trải Nghiệm $\rightarrow$ Báo Giá & Kêu Gọi) nối sẵn dây Prompt, dây ảnh Hero tham chiếu và bật Continuity liền mạch.
+* **HosiFlow Companion v1.6.0:** Nâng cấp tiện ích mở rộng với engine trích xuất DOM tab nền trên Chrome, giải quyết bài toán CSR của Shopee/TikTok mà không cần token API.
 
 ### v0.1.4 (10/11/2026)
 * **Preset "MV Ca Nhạc V-Pop Điện Ảnh":** Bổ sung preset quy trình MV hoàn chỉnh (Character Vault khóa mặt + Node tạo bài hát FlowMusic + 4 cảnh video Muse.ai kết nối Continuity).
